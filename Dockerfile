@@ -1,23 +1,23 @@
-# Використовуємо чистий, стабільний образ Alpine
-FROM alpine:latest
+# Використовуємо чистий образ Python для Alpine
+FROM python:3.11-alpine
 
-# Додаємо Edge-репозиторій для встановлення wkhtmltopdf
-RUN echo "@edge http://nl.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories && \
-    echo "@edge http://nl.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
+# --- ВСТАНОВЛЕННЯ WKHTMLTOPDF З БІНАРНОГО ФАЙЛА ---
+# Оновлюємо систему та встановлюємо інструменти для завантаження (wget)
+RUN apk update && apk add --no-cache wget
 
-# Встановлюємо wkhtmltopdf, Python та всі необхідні залежності
-RUN apk update && \
-    apk add --no-cache python3 py3-pip wkhtmltopdf@edge \
-    && rm -rf /var/cache/apk/*
+# Завантажуємо та встановлюємо wkhtmltopdf вручну
+# Це надійне посилання на останній робочий бінарник
+RUN wget https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/0.12.6/wkhtmltopdf-0.12.6.2.linux-static-amd64.tar.xz && \
+    tar xvf wkhtmltopdf-0.12.6.2.linux-static-amd64.tar.xz && \
+    cp wkhtmltox/bin/wkhtmltopdf /usr/bin/wkhtmltopdf && \
+    rm -rf wkhtmltopdf-0.12.6.2.linux-static-amd64.tar.xz wkhtmltox
 
-# Встановлюємо робочу директорію
+# --- Встановлення Python-залежностей ---
 WORKDIR /app
 
-# Копіюємо requirements.txt та встановлюємо Python-залежності
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копіюємо решту файлів проєкту в контейнер
 COPY . .
 
 # Команда для запуску бота
