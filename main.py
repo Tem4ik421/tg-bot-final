@@ -1,6 +1,6 @@
 """
 Бот для создания AI-презентаций в PDF.
-Версия 37.6 - FINAL: Ultimate Design Polish, Stable Layout, and Feature Complete.
+Версия 37.7 - FINAL: Ultimate Symmetry Fix, Stable Layout, and Feature Complete.
 """
 
 import os
@@ -135,7 +135,7 @@ def fetch_maritime_news():
         icon = "📺" if item['type'] == 'VIDEO' else "📰"
         output += f"{icon} **{i+1}. {item['title']}**\n"
         output += f"_{item['source']}_: {item['snippet'][:120]}...\n"
-        output += f"[Подробнее]({item['link']})\n\n"
+        output += f"\n{item['link']}\n" # Коректне форматування для прев'ю
         
     return output
 
@@ -167,7 +167,6 @@ def create_presentation_pdf(user_id, slides_data):
                 background-color: #ffffff; 
                 position: relative;
                 box-shadow: 0 0 15px rgba(0,0,0,0.05); 
-                margin-bottom: 15mm; 
             }}
             .page:last-of-type {{ page-break-after: avoid; }}
             
@@ -185,24 +184,24 @@ def create_presentation_pdf(user_id, slides_data):
                 font-family: 'Playfair Display', serif;
                 font-size: 22px; 
                 font-weight: 700; 
-                margin-top: 20px; 
-                margin-bottom: 12px; 
+                margin-top: 15px; /* Уменьшено */
+                margin-bottom: 8px; /* Уменьшено */
                 color: #1a4a9a; 
-                border-bottom: 2px solid #2e5cb8; 
-                padding-bottom: 4px;
+                border-bottom: 3px solid #ccc; /* Чуть толще, чтобы акцентировать */
+                padding-bottom: 5px;
             }}
             h3.block-title {{
                 font-size: 15px; 
                 font-weight: 700; 
                 margin-top: 0; 
-                margin-bottom: 4px; 
-                color: #444; 
+                margin-bottom: 3px; 
+                color: #1a4a9a; /* Заголовки блоков сделаны синими для акцента */
             }}
             p.main-text {{
                 font-size: 12.5px; 
                 line-height: 1.6; 
                 text-align: justify; 
-                margin: 0 0 10px 0; 
+                margin: 0 0 5px 0; /* Минимальный отступ между параграфами */
             }}
 
             /* IMAGE AND INTRO BLOCK */
@@ -228,15 +227,22 @@ def create_presentation_pdf(user_id, slides_data):
             }}
             .intro-text-content {{ 
                 flex-grow: 1; 
-                padding-top: 5px; 
+                padding-top: 2px; 
             }}
 
-            /* INFO BLOCKS LAYOUT */
-            .info-blocks-grid {{
+            /* INFO BLOCKS LAYOUT - КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ДЛЯ СИММЕТРИИ */
+            .info-blocks-container {{ 
+                 width: 100%;
+                 display: flex; 
+                 flex-direction: column;
+                 gap: 15px;
+            }}
+            .info-blocks-row {{
                 display: grid;
                 grid-template-columns: 1fr 1fr; 
-                gap: 15px; 
+                gap: 15px;
                 width: 100%;
+                align-items: stretch; /* Растягивает элементы на одинаковую высоту */
             }}
             .info-block-item {{
                 background-color: #fcfdfe; 
@@ -244,9 +250,8 @@ def create_presentation_pdf(user_id, slides_data):
                 padding: 15px;
                 border-radius: 4px;
                 box-shadow: 0 1px 2px rgba(0,0,0,0.03); 
-            }}
-            .info-block-item h3 {{
-                 color: #1a4a9a; 
+                height: 100%; 
+                box-sizing: border-box;
             }}
 
             /* FOOTER */
@@ -296,18 +301,41 @@ def create_presentation_pdf(user_id, slides_data):
             columns_title = slide["info_blocks"][0].get("section_title", "Ключевые моменты")
             slide_html += f'<h2 class="section-title">{html.escape(columns_title)}</h2>'
             
-            slide_html += '<div class="info-blocks-grid">'
-            for block in slide["info_blocks"]:
+            # НОВОЕ: Контейнер для рядов Flex
+            slide_html += '<div class="info-blocks-container">'
+            
+            # Группируем блоки по два для рядов
+            blocks = slide["info_blocks"]
+            for j in range(0, len(blocks), 2):
+                block1 = blocks[j]
+                block2 = blocks[j+1] if j+1 < len(blocks) else None
+
+                slide_html += '<div class="info-blocks-row">'
+                
+                # Блок 1
                 slide_html += '<div class="info-block-item">'
-                slide_html += f'<h3 class="block-title">{html.escape(block["title"])}</h3>'
-                slide_html += f'<p class="main-text">{html.escape(block["text"])}</p>'
+                slide_html += f'<h3 class="block-title">{html.escape(block1["title"])}</h3>'
+                slide_html += f'<p class="main-text">{html.escape(block1["text"])}</p>'
                 slide_html += '</div>'
-            slide_html += '</div>' # Close info-blocks-grid
+                
+                # Блок 2
+                if block2:
+                    slide_html += '<div class="info-block-item">'
+                    slide_html += f'<h3 class="block-title">{html.escape(block2["title"])}</h3>'
+                    slide_html += f'<p class="main-text">{html.escape(block2["text"])}</p>'
+                    slide_html += '</div>'
+                # Если нечетное количество, добавляем пустой блок для выравнивания
+                elif len(blocks) % 2 != 0:
+                     slide_html += '<div class="info-block-item" style="visibility: hidden; border: none; background: none; box-shadow: none;"></div>'
+
+                slide_html += '</div>' # Close info-blocks-row
+
+            slide_html += '</div>' # Close info-blocks-container
 
         # 3. FOOTER
         slide_html += f'<div class="footer">Страница {i + 1}</div>' 
         slide_html += '</div>' # Close page
-        slides_html += slide_html
+        slides_html += slides_html
 
     final_html = html_head + slides_html + "</body></html>"
     
@@ -413,15 +441,13 @@ def handle_text_messages(message):
         if session.get('state') != 'generating':
             return handle_start(message)
 
-def is_math_query(text: str):
-    return bool(re.search(r'\d[\+\-\*\/]\d', text) or re.search(r'\b(что|как|почему|объясни|зачем)\b', text, re.IGNORECASE))
-
 def handle_qna_question(message):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    if not GEMINI_API_KEY or not is_math_query(message.text):
-        bot.send_message(chat_id, "Извините, эта функция работает только для сложных вопросов, требующих расчетов или развернутого ответа.")
+    # Бот теперь отвечает на ВСЕ вопросы.
+    if not GEMINI_API_KEY:
+        bot.send_message(chat_id, "🚫 Ошибка: Ключ Gemini API не установлен.")
         user_sessions.pop(user_id, None)
         return bot.send_message(chat_id, "Готов к новым задачам!", reply_markup=get_main_menu_keyboard())
 
@@ -434,7 +460,7 @@ def handle_qna_question(message):
         bot.edit_message_text(f"✅ **Ответ готов:**\n\n{response_text}", chat_id, last_msg.message_id, parse_mode='Markdown')
         
     except ConnectionError:
-        bot.edit_message_text("🚫 Ошибка: Ключ Gemini API не установлен.", chat_id, last_msg.message_id)
+        bot.edit_message_text("🚫 Ошибка: Проблема с подключением к Gemini API.", chat_id, last_msg.message_id)
     except Exception as e:
         bot.edit_message_text(f"🚫 Произошла ошибка при получении ответа: {e}", chat_id, last_msg.message_id)
     finally:
