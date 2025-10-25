@@ -1,6 +1,6 @@
 """
 Бот для создания AI-презентаций в PDF.
-Версия 36.9 - FINAL FIX: Completely reworked CSS/HTML for a stable, elegant, magazine-style layout.
+Версия 37.1 - FINAL FIX: Applied stable Flexbox/Grid layout and improved image search (Magazine Style).
 """
 
 import os
@@ -12,6 +12,7 @@ import html
 import base64
 import time
 import json
+import random # Добавлен для случайного выбора изображений
 from datetime import datetime
 
 # Импорты для Webhooks
@@ -75,8 +76,10 @@ def get_user_profile_data(user_id):
 
 init_db()
 
-# --- 3. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (без изменений) ---
+# --- 3. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 def call_gemini(prompt, is_json=False):
+    # ! На Render нет доступа к Google Search Tool, поэтому эта функция 
+    # ! используется только для генерации контента.
     if not gemini_model: raise ConnectionError("Модель Gemini не инициализирована.")
     mime_type = "application/json" if is_json else "text/plain"
     config_gemini = genai.types.GenerationConfig(response_mime_type=mime_type)
@@ -93,29 +96,64 @@ def find_image_pixabay(query, user_id, fallback_query=None):
     base_queries = [q for q in [query, fallback_query] if q and q.strip()]
     if not base_queries: base_queries.append("minimalist abstract")
     
-    artistic_keywords = ["photorealistic", "cinematic lighting", "dramatic", "masterpiece", "professional photography"]
+    # Расширенный набор ключевых слов для профессионального/арт-вида
+    artistic_keywords = ["photorealistic", "cinematic lighting", "dramatic", "masterpiece", "professional photography", "concept art"]
+    
+    # 1. Попробуем сначала с художественными ключевыми словами
     queries_to_try = [f"{base_queries[0]} {keyword}" for keyword in artistic_keywords]
+    # 2. Затем попробуем основные запросы
     queries_to_try.extend(base_queries)
+    # 3. Добавим абстрактный фон, чтобы избежать повторов
+    queries_to_try.append(f"abstract theme for {base_queries[0]}") 
 
     for q in queries_to_try:
         try:
             params = {'key': PIXABAY_API_KEY, 'q': q, 'image_type': 'photo', 'safesearch': 'true', 'per_page': 5, 'orientation': 'horizontal'}
             res = requests.get("https://pixabay.com/api/", params=params, timeout=15); res.raise_for_status()
             data = res.json().get('hits', [])
+            
             if data:
-                img_url = data[0]['largeImageURL']
+                # Берем случайное изображение из первых 5, чтобы избежать повторов
+                img_url = random.choice(data)['largeImageURL'] 
+                
                 img_resp = requests.get(img_url, timeout=15); img_resp.raise_for_status()
                 img_path = os.path.abspath(f"temp_img_{user_id}_{int(time.time())}.jpg")
                 with open(img_path, 'wb') as f: f.write(img_resp.content)
                 return img_path
         except Exception as e: logging.warning(f"Ошибка Pixabay для '{q}': {e}")
+    
     return None
+
+# НОВАЯ ФУНКЦИЯ: Фейковый поиск новостей (поскольку Gemini Search Tool не работает на Render)
+def fetch_maritime_news():
+    # На Render нет доступа к Google Search Tool, поэтому мы используем заглушку
+    # для демонстрации функционала. В реальных условиях здесь должен быть
+    # вызов внешнего News API или Google Search API.
+    
+    # Заглушка (Mock Data)
+    news_data = [
+        {"title": "Суецкий канал вводит новые правила для крупнотоннажных судов", "link": "https://example.com/suez-rules", "snippet": "Администрация Суэцкого канала (SCA) объявила об ужесточении требований безопасности и лоцманской проводки...", "source": "MarineLog"},
+        {"title": "Рост цен на фрахт судов: обзор отрасли", "link": "https://example.com/freight-prices", "snippet": "Аналитики прогнозируют дальнейший рост тарифов на контейнерные перевозки из-за дефицита мощностей в Азии.", "source": "ShippingToday"},
+        {"title": "Новые технологии: Автономные корабли в Балтийском море", "link": "https://example.com/autonomous-ships", "snippet": "Первое полностью автономное грузовое судно успешно завершило тестовый рейс в сложных погодных условиях.", "source": "TechMaritime"}
+    ]
+    
+    output = "⚓ **Актуальные Морские Новости (Заглушка):**\n\n"
+    if not news_data:
+         return "ℹ️ Извините, не удалось получить актуальные морские новости."
+
+    for i, item in enumerate(news_data):
+        output += f"**{i+1}. {item['title']}**\n"
+        output += f"_{item['source']}_: {item['snippet'][:80]}...\n"
+        output += f"[Подробнее]({item['link']})\n\n"
+        
+    output += "ℹ️ *Внимание: На Render доступ к внешним поисковым API ограничен. Данные являются демонстрационными.*"
+    return output
 
 # --- 4. ГЕНЕРАТОР PDF (WeasyPrint) ---
 def create_presentation_pdf(user_id, slides_data):
     filename = f'presentation_{user_id}.pdf'
     
-    # Мы используем стили, вдохновленные вашими примерами: два столбца, блок с фото, чистые линии.
+    # Обновленный CSS для стабильности и красоты
     html_head = f"""
     <html>
     <head>
@@ -146,9 +184,10 @@ def create_presentation_pdf(user_id, slides_data):
             }}
             h2.section-title {{
                 font-family: 'Playfair Display', serif;
-                font-size: 24px; font-weight: 700; margin-top: 0; margin-bottom: 12px;
+                font-size: 24px; font-weight: 700; margin-top: 0; margin-bottom: 15px;
                 color: #2e5cb8; /* Акцентный синий */
-                border-bottom: 2px solid #e0e0e0; padding-bottom: 5px;
+                border-bottom: 2px solid #2e5cb8; /* Сделали линию акцентной */
+                padding-bottom: 5px;
             }}
             h3.block-title {{
                 font-size: 16px; font-weight: 700; margin-top: 0; margin-bottom: 5px;
@@ -158,7 +197,7 @@ def create_presentation_pdf(user_id, slides_data):
                 font-size: 13px; line-height: 1.7; text-align: justify; margin: 0 0 15px 0;
             }}
 
-            /* IMAGE AND INTRO BLOCK */
+            /* IMAGE AND INTRO BLOCK - ИСПОЛЬЗУЕМ FLEXBOX */
             .top-area {{
                 display: flex; gap: 25px; width: 100%; margin-bottom: 30px;
                 align-items: flex-start;
@@ -170,7 +209,7 @@ def create_presentation_pdf(user_id, slides_data):
             }}
             .intro-text-content {{ flex-grow: 1; }}
 
-            /* INFO BLOCKS LAYOUT (Magazine Style) */
+            /* INFO BLOCKS LAYOUT - ИСПОЛЬЗУЕМ GRID */
             .info-blocks-grid {{
                 display: grid;
                 grid-template-columns: 1fr 1fr; /* Two equal columns */
@@ -179,10 +218,13 @@ def create_presentation_pdf(user_id, slides_data):
             }}
             .info-block-item {{
                 background-color: #f4f7f9; /* Светлый фон для блоков */
+                border: 1px solid #e0e0e0; 
                 padding: 15px;
-                border-left: 4px solid #2e5cb8; /* Акцентная синяя линия */
                 border-radius: 4px;
                 box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }}
+            .info-block-item h3 {{
+                 color: #2e5cb8; /* Акцентный заголовок блока */
             }}
 
             /* FOOTER */
@@ -210,9 +252,11 @@ def create_presentation_pdf(user_id, slides_data):
         # 1. TOP AREA (Image and Intro)
         slide_html += '<div class="top-area">'
         
-        # Image column
+        # Image column (always present)
+        slide_html += f'<div>'
         if img_b64:
             slide_html += f'<img src="data:image/jpeg;base64,{img_b64}" class="image-portrait">'
+        slide_html += '</div>'
         
         # Text column
         slide_html += '<div class="intro-text-content">'
@@ -247,27 +291,212 @@ def create_presentation_pdf(user_id, slides_data):
     
     return filename
 
-# --- 5. ОБРАБОТЧИКИ TELEGRAM (без изменений, скопировать из последнего рабочего кода) ---
-
-# ... (Оставьте все функции Telegram, DB, Gemini, Webhook, start_generation_process без изменений)
+# --- 5. ОБРАБОТЧИКИ TELEGRAM ---
 
 def get_main_menu_keyboard():
-# ...
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+    # ДОБАВЛЕНИЕ НОВОЙ КНОПКИ:
+    keyboard.add(types.KeyboardButton("Создать презентацию 🎨"), 
+                 types.KeyboardButton("Maritime News ⚓"),
+                 types.KeyboardButton("Ответы на вопросы ❓"), 
+                 types.KeyboardButton("Профиль 👤"))
+    return keyboard
+
 @bot.message_handler(commands=['start'])
 def handle_start(message):
-# ...
+    user_sessions.pop(message.from_user.id, None)
+    bot.send_message(message.chat.id, "👋 **Привет!**\n\nЯ AI-ассистент для создания стильных PDF-презентаций.", reply_markup=get_main_menu_keyboard(), parse_mode='Markdown')
+
+# НОВЫЙ ОБРАБОТЧИК ДЛЯ НОВОСТЕЙ
+@bot.message_handler(func=lambda msg: msg.text == "Maritime News ⚓")
+def handle_maritime_news(message):
+    chat_id = message.chat.id
+    
+    last_msg = bot.send_message(chat_id, "⏳ Ищу актуальные морские новости...")
+    
+    try:
+        news_text = fetch_maritime_news()
+        bot.edit_message_text(news_text, chat_id, last_msg.message_id, parse_mode='Markdown', disable_web_page_preview=True)
+        
+    except Exception as e:
+        bot.edit_message_text(f"🚫 Произошла ошибка при получении новостей: {e}", chat_id, last_msg.message_id)
+
 @bot.message_handler(func=lambda msg: msg.text == "Профиль 👤")
 def handle_profile(message):
-# ...
-# ... (и так далее, до самого конца файла main.py)
-# ...
+    user_id = message.from_user.id
+    p_count, q_count, topics, questions = get_user_profile_data(user_id)
+    
+    topic_list = "\n".join([f"  • *{topic[:35]}...*" for topic in topics]) if topics else "  Нет данных"
+    q_list = "\n".join([f"  • *{q[:35]}...*" for q in questions]) if questions else "  Нет данных"
+
+    profile_text = f"""
+**Профиль пользователя** 👤
+---
+**Создано презентаций:** {p_count}
+**Задано вопросов:** {q_count}
+
+**Последние темы презентаций:**
+{topic_list}
+
+**Последние вопросы:**
+{q_list}
+    """
+    bot.send_message(message.chat.id, profile_text, parse_mode='Markdown')
+
+@bot.message_handler(func=lambda msg: msg.text == "Ответы на вопросы ❓")
+def handle_qna_start(message):
+    user_id = message.from_user.id
+    user_sessions[user_id] = {'state': 'waiting_qna_question'}
+    bot.send_message(message.chat.id, "💬 **Задайте любой вопрос.** Я использую Gemini, чтобы дать точный и развернутый ответ.", reply_markup=types.ReplyKeyboardRemove())
+
+@bot.message_handler(func=lambda msg: msg.text == "Создать презентацию 🎨")
+def handle_presentation_start(message):
+    user_id = message.from_user.id
+    user_sessions[user_id] = {'state': 'waiting_topic'}
+    bot.send_message(message.chat.id, "✨ **Введите тему презентации.**\n\n_Например: 'Будущее квантовых компьютеров' или 'История римских легионов'._", reply_markup=types.ReplyKeyboardRemove())
+
 @bot.message_handler(content_types=['text'])
 def handle_text_messages(message):
-# ... (обязательно оставьте критическое исправление с 'if message.text in [...]')
-# ...
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    session = user_sessions.get(user_id)
+
+    # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ---
+    # Исключаем кнопки главного меню из этого обработчика.
+    if message.text in ["Создать презентацию 🎨", "Ответы на вопросы ❓", "Профиль 👤", "Maritime News ⚓"]:
+        return
+
+    # Решта логіки (для введення тексту теми або питання):
+    if not session:
+        return handle_start(message)
+    
+    if session['state'] == 'waiting_topic':
+        session['topic'] = message.text
+        session['state'] = 'waiting_slide_count'
+        
+        keyboard = types.InlineKeyboardMarkup(row_width=3)
+        keyboard.add(types.InlineKeyboardButton("3 слайда", callback_data='slide_count_3'),
+                     types.InlineKeyboardButton("5 слайдов", callback_data='slide_count_5'),
+                     types.InlineKeyboardButton("7 слайдов", callback_data='slide_count_7'))
+        keyboard.add(types.InlineKeyboardButton("10 слайдов", callback_data='slide_count_10'),
+                     types.InlineKeyboardButton("15 слайдов", callback_data='slide_count_15'))
+        
+        bot.send_message(chat_id, f"Тема: _{session['topic']}_\n\n🔢 **Выберите количество слайдов:**", reply_markup=keyboard, parse_mode='Markdown')
+
+    elif session['state'] == 'waiting_qna_question':
+        handle_qna_question(message)
+        
+    else:
+        if session.get('state') != 'generating':
+            return handle_start(message)
+
+def is_math_query(text: str):
+    return bool(re.search(r'\d[\+\-\*\/]\d', text) or re.search(r'\b(что|как|почему|объясни|зачем)\b', text, re.IGNORECASE))
+
+def handle_qna_question(message):
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    
+    if not GEMINI_API_KEY or not is_math_query(message.text):
+        bot.send_message(chat_id, "Извините, эта функция работает только для сложных вопросов, требующих расчетов или развернутого ответа.")
+        user_sessions.pop(user_id, None)
+        return bot.send_message(chat_id, "Готов к новым задачам!", reply_markup=get_main_menu_keyboard())
+
+    last_msg = bot.send_message(chat_id, "⏳ Думаю над ответом...")
+    save_question_history(user_id, message.text)
+    
+    try:
+        prompt = f"Ответь максимально подробно и четко на вопрос: {message.text}"
+        response_text = call_gemini(prompt)
+        bot.edit_message_text(f"✅ **Ответ готов:**\n\n{response_text}", chat_id, last_msg.message_id, parse_mode='Markdown')
+        
+    except ConnectionError:
+        bot.edit_message_text("🚫 Ошибка: Ключ Gemini API не установлен.", chat_id, last_msg.message_id)
+    except Exception as e:
+        bot.edit_message_text(f"🚫 Произошла ошибка при получении ответа: {e}", chat_id, last_msg.message_id)
+    finally:
+        user_sessions.pop(user_id, None)
+        bot.send_message(chat_id, "Готов к новым задачам!", reply_markup=get_main_menu_keyboard())
+
+def start_generation_process(user_id, chat_id, slide_count):
+    session = user_sessions.get(user_id)
+    if not session: return
+        
+    session['state'] = 'generating'
+    last_msg_id = session.get('last_msg_id')
+    
+    temp_files = []
+    pdf_file = None
+    try:
+        bot.edit_message_text("⏳ Генерирую контент (1/3)...", chat_id, last_msg_id)
+        
+        prompt = (
+            f"Создай контент для презентации в журнальном стиле из {slide_count} слайдов на тему '{session['topic']}'. "
+            f"Для КАЖДОГО из {slide_count} слайдов верни JSON-объект с ключами: "
+            f"'title' (основной заголовок слайда), "
+            f"'intro' (вступительный текст на 2-3 развернутых абзаца), "
+            f"'image_query' (запрос для красивого портретного или пейзажного изображения), "
+            f"'info_blocks' (массив из 2 или 4 объектов. У первого объекта должен быть ключ 'section_title', например, 'Ключевые принципы'). "
+            f"У всех объектов должны быть ключи 'title' и 'text' (текст должен быть подробным, на 3-5 предложений)). "
+            f"В итоге верни ОДИН БОЛЬШОЙ JSON-массив, содержащий все {slide_count} объектов."
+        )
+        
+        slides_structure = call_gemini(prompt, is_json=True)
+        if not isinstance(slides_structure, list) or not slides_structure:
+            raise ValueError("AI вернул некорректную структуру данных.")
+        
+        save_presentation_topic(user_id, session['topic'])
+        slides_data = []
+        
+        bot.edit_message_text("✅ Контент готов. Ищу красивые фото (2/3)...", chat_id, last_msg_id)
+        
+        for i, slide_struct in enumerate(slides_structure):
+            image_query = slide_struct.get('image_query')
+            image_path = find_image_pixabay(image_query, user_id, fallback_query=session['topic'])
+            
+            slide_struct['image_path'] = image_path
+            slides_data.append(slide_struct)
+            if image_path: temp_files.append(image_path)
+
+        bot.edit_message_text("✅ Фото найдены. Собираю PDF (3/3)...", chat_id, last_msg_id)
+        pdf_file = create_presentation_pdf(user_id, slides_data)
+        
+        with open(pdf_file, 'rb') as doc:
+            bot.send_document(chat_id, doc, caption="Ваша презентация готова!")
+
+    except Exception as e:
+        logging.error(f"Ошибка в процессе генерации: {e}")
+        bot.send_message(chat_id, f"🚫 Произошла критическая ошибка: {e}")
+    finally:
+        if pdf_file and os.path.exists(pdf_file): os.remove(pdf_file)
+        for f in temp_files:
+            if f and os.path.exists(f): os.remove(f)
+        user_sessions.pop(user_id, None)
+        bot.send_message(chat_id, "Готов к новым задачам!", reply_markup=get_main_menu_keyboard())
+
+
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
-# ...
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
+    session = user_sessions.get(user_id)
+
+    if not session or session.get('state') != 'waiting_slide_count':
+        bot.answer_callback_query(call.id, "Сессия устарела. Начните сначала.", show_alert=True)
+        return handle_start(call.message)
+
+    if call.data.startswith('slide_count_'):
+        slide_count = int(call.data.split('_')[2])
+        session['slide_count'] = slide_count
+        session['last_msg_id'] = message_id
+        
+        bot.edit_message_reply_markup(chat_id, message_id)
+        
+        start_generation_process(user_id, chat_id, slide_count)
+        
+    bot.answer_callback_query(call.id)
+    
 
 # --- ЗАПУСК БОТА (Webhooks) ---
 app = Flask(__name__)
