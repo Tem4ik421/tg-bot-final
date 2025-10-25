@@ -1,6 +1,6 @@
 """
 Бот для создания AI-презентаций в PDF.
-Версия 37.7 - FINAL: Ultimate Symmetry Fix, Stable Layout, and Feature Complete.
+Версия 37.7 - FINAL FIX: Ultimate Symmetry Fix, Stable Layout, and Feature Complete (Length Fix).
 """
 
 import os
@@ -102,18 +102,31 @@ def find_image_pixabay(query, user_id, fallback_query=None):
 
     for q in queries_to_try:
         try:
-            params = {'key': PIXABAY_API_KEY, 'q': q, 'image_type': 'photo', 'safesearch': 'true', 'per_page': 10, 'orientation': 'horizontal'}
-            res = requests.get("https://pixabay.com/api/", params=params, timeout=15); res.raise_for_status()
+            # УСТАНОВЛЕНА ЗАДЕРЖКА, ЧТОБЫ ИЗБЕЖАТЬ 429 ERRORS
+            time.sleep(1) 
+            
+            params = {'key': PIXABAY_API_KEY, 'q': q, 'image_type': 'photo', 'safesearch': 'true', 'per_page': 5, 'orientation': 'horizontal'}
+            
+            # УВЕЛИЧЕНО ВРЕМЯ ОЖИДАНИЯ
+            res = requests.get("https://pixabay.com/api/", params=params, timeout=30); res.raise_for_status() 
+            
             data = res.json().get('hits', [])
             
             if data:
+                # Берем случайное изображение
+                import random
                 img_url = random.choice(data)['largeImageURL'] 
                 
-                img_resp = requests.get(img_url, timeout=15); img_resp.raise_for_status()
+                img_resp = requests.get(img_url, timeout=30); img_resp.raise_for_status()
                 img_path = os.path.abspath(f"temp_img_{user_id}_{int(time.time())}.jpg")
                 with open(img_path, 'wb') as f: f.write(img_resp.content)
                 return img_path
-        except Exception as e: logging.warning(f"Ошибка Pixabay для '{q}': {e}")
+        except Exception as e: 
+            logging.warning(f"Ошибка Pixabay: {e}")
+            # Если 429 (слишком много запросов), прекращаем поиск
+            if "429" in str(e):
+                 logging.error("ОСТАНОВКА ПОИСКА: Превышен лимит Pixabay API (429).")
+                 return None 
     
     return None
 
@@ -124,7 +137,7 @@ def fetch_maritime_news():
         {"type": "VIDEO", "title": "Экономика: Как кризис в логистике повлиял на фрахт контейнеровозов", "link": "https://www.youtube.com/watch?v=R9_uE-7tB0A", "snippet": "Видеообзор: Анализ мирового рынка контейнерных перевозок, прогноз цен и дефицит мощностей в Азии.", "source": "Bloomberg TV"},
         {"type": "TEXT", "title": "Европа и США вводят ограничения на импорт российских алмазов", "link": "https://www.maritime-executive.com/article/g7-to-introduce-ban-on-russian-diamonds", "snippet": "Страны G7 договорились о введении нового пакета ограничений, который коснется морских перевозок и торговли алмазами...", "source": "Maritime Executive"},
         {"type": "TEXT", "title": "Новые технологии: Полностью автономный сухогруз завершил испытания", "link": "https://www.vesselfinder.com/news/31969-Autonomous-Container-Ship-Completes-First-Sea-Trial", "snippet": "Первое полностью автономное грузовое судно успешно завершило тестовый рейс в сложных погодных условиях Балтийского моря.", "source": "VesselFinder"},
-        {"type": "VIDEO", "title": "Торговые пути: Индия развивает порты для конкуренции с Китаем", "link": "https://www.youtube.com/watch?v=Fj_t_S5zV5U", "snippet": "Видео: Инфраструктурные проекты в Индии, направленные на модернизацию портовых комплексов и увеличение грузопотока.", "source": "World Shipping News"}
+        {"type": "VIDEO", "title": "Торговые пути: Индия развивает порты для конкуренции с Китаем", "link": "https://www.youtube.com/watch?v=yYJ6yJ7I6z0", "snippet": "Видео: Инфраструктурные проекты в Индии, направленные на модернизацию портовых комплексов и увеличение грузопотока.", "source": "World Shipping News"}
     ]
     
     output = "⚓ **Актуальные Морские Новости:**\n\n"
@@ -135,8 +148,7 @@ def fetch_maritime_news():
         icon = "📺" if item['type'] == 'VIDEO' else "📰"
         output += f"{icon} **{i+1}. {item['title']}**\n"
         output += f"_{item['source']}_: {item['snippet'][:120]}...\n"
-        # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Отправляем ссылку на отдельном чистом рядке 
-        output += f"\n{item['link']}\n" 
+        output += f"\n{item['link']}\n" # Коректне форматування для прев'ю
         
     return output
 
@@ -168,7 +180,6 @@ def create_presentation_pdf(user_id, slides_data):
                 background-color: #ffffff; 
                 position: relative;
                 box-shadow: 0 0 15px rgba(0,0,0,0.05); 
-                margin-bottom: 15mm; 
             }}
             .page:last-of-type {{ page-break-after: avoid; }}
             
@@ -449,6 +460,12 @@ def handle_qna_question(message):
     try:
         prompt = f"Ответь максимально подробно и четко на вопрос: {message.text}"
         response_text = call_gemini(prompt)
+        
+        # --- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: ОГРАНИЧЕНИЕ ДЛИНЫ ---
+        MAX_LENGTH = 3800 # Оставляем запас ниже 4096 символов
+        if len(response_text) > MAX_LENGTH:
+             response_text = response_text[:MAX_LENGTH] + "\n\n[...] Ответ был обрезан из-за ограничения Telegram."
+             
         bot.edit_message_text(f"✅ **Ответ готов:**\n\n{response_text}", chat_id, last_msg.message_id, parse_mode='Markdown')
         
     except ConnectionError:
