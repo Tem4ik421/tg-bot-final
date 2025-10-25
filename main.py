@@ -1,6 +1,6 @@
 """
 Бот для создания AI-презентаций в PDF.
-Версия 36.7 - FINAL FIX: Webhook logic cleared for Gunicorn and button handler conflict fixed.
+Версия 36.9 - FINAL FIX: Completely reworked CSS/HTML for a stable, elegant, magazine-style layout.
 """
 
 import os
@@ -114,74 +114,130 @@ def find_image_pixabay(query, user_id, fallback_query=None):
 # --- 4. ГЕНЕРАТОР PDF (WeasyPrint) ---
 def create_presentation_pdf(user_id, slides_data):
     filename = f'presentation_{user_id}.pdf'
+    
+    # Мы используем стили, вдохновленные вашими примерами: два столбца, блок с фото, чистые линии.
     html_head = f"""
-    <html><head><meta charset="UTF-8"><title>Презентация</title>
-    <style>
-        @page {{ size: A4; margin: 0; }}
-        body {{ margin: 0; padding: 0; background-color: #fff; font-family: 'Times New Roman', Times, serif; color: #333; }}
-        .page {{ 
-            width: 210mm; height: 297mm; page-break-after: always; 
-            padding: 22mm; box-sizing: border-box; 
-        }}
-        
-        h1.main-title {{ font-size: 40pt; font-weight: bold; margin: 25mm 0; line-height: 1.2; text-align: center; color: #111; }}
-        h2.section-title {{ font-size: 28px; font-weight: bold; margin-top: 0; margin-bottom: 10px; }}
-        p.main-text {{ font-size: 14px; line-height: 1.6; text-align: justify; margin: 0; }}
-        
-        .image-portrait {{ width: 150px; height: 190px; object-fit: cover; border-radius: 4px; }}
-        hr.separator {{ border: none; border-top: 1px solid #eee; margin: 25mm 0; }}
-        h2.columns-title {{ font-size: 24px; font-weight: bold; margin-top: 0; margin-bottom: 20px; }}
-        
-        .info-blocks-table {{ width: 100%; border-collapse: separate; border-spacing: 20px 0; }}
-        .info-blocks-table td {{ 
-            background-color: #f8f5f0; padding: 20px; border-radius: 4px; 
-            width: 50%; vertical-align: top;
-        }}
-        .info-blocks-table h3 {{ font-size: 16px; font-weight: bold; margin-top: 0; margin-bottom: 8px; }}
-        .info-blocks-table p {{ font-size: 13px; line-height: 1.5; margin: 0; text-align: left; }}
-    </style></head><body>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Презентация</title>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&family=Playfair+Display:wght@700&display=swap');
+
+            /* PAGE SETUP */
+            @page {{ size: A4; margin: 0; }}
+            body {{
+                margin: 0; padding: 0; background-color: #f8f8f8;
+                font-family: 'Roboto', sans-serif; color: #333; line-height: 1.6;
+            }}
+            .page {{
+                width: 210mm; height: 297mm; page-break-after: always;
+                padding: 25mm 25mm 15mm;
+                box-sizing: border-box; background-color: #ffffff;
+                position: relative;
+            }}
+            .page:last-of-type {{ page-break-after: avoid; }}
+            
+            /* HEADINGS */
+            h1.main-title {{
+                font-family: 'Playfair Display', serif;
+                font-size: 38pt; font-weight: 700; margin: 0 0 10mm;
+                color: #222; text-align: center; letter-spacing: 0.5px;
+            }}
+            h2.section-title {{
+                font-family: 'Playfair Display', serif;
+                font-size: 24px; font-weight: 700; margin-top: 0; margin-bottom: 12px;
+                color: #2e5cb8; /* Акцентный синий */
+                border-bottom: 2px solid #e0e0e0; padding-bottom: 5px;
+            }}
+            h3.block-title {{
+                font-size: 16px; font-weight: 700; margin-top: 0; margin-bottom: 5px;
+                color: #333;
+            }}
+            p.main-text {{
+                font-size: 13px; line-height: 1.7; text-align: justify; margin: 0 0 15px 0;
+            }}
+
+            /* IMAGE AND INTRO BLOCK */
+            .top-area {{
+                display: flex; gap: 25px; width: 100%; margin-bottom: 30px;
+                align-items: flex-start;
+            }}
+            .image-portrait {{
+                width: 180px; height: 240px; object-fit: cover;
+                border-radius: 4px; box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+                flex-shrink: 0;
+            }}
+            .intro-text-content {{ flex-grow: 1; }}
+
+            /* INFO BLOCKS LAYOUT (Magazine Style) */
+            .info-blocks-grid {{
+                display: grid;
+                grid-template-columns: 1fr 1fr; /* Two equal columns */
+                gap: 20px;
+                width: 100%;
+            }}
+            .info-block-item {{
+                background-color: #f4f7f9; /* Светлый фон для блоков */
+                padding: 15px;
+                border-left: 4px solid #2e5cb8; /* Акцентная синяя линия */
+                border-radius: 4px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }}
+
+            /* FOOTER */
+            .footer {{
+                position: absolute;
+                bottom: 10mm;
+                width: calc(100% - 50mm);
+                border-top: 1px solid #ddd;
+                padding-top: 5px;
+                font-size: 10px;
+                color: #999;
+                text-align: right;
+            }}
+        </style>
+    </head>
+    <body>
     """
     
     slides_html = ""
-    for slide in slides_data:
+    for i, slide in enumerate(slides_data):
         img_b64 = image_to_base64(slide.get('image_path'))
         
-        slide_html = '<div class="page">'
-        slide_html += '<table style="width: 100%; border-collapse: collapse;">'
-        slide_html += '<tr>'
-        slide_html += f'<td style="width: 170px; padding-right: 30px; vertical-align: top;">'
+        slide_html = f'<div class="page">'
+        
+        # 1. TOP AREA (Image and Intro)
+        slide_html += '<div class="top-area">'
+        
+        # Image column
         if img_b64:
             slide_html += f'<img src="data:image/jpeg;base64,{img_b64}" class="image-portrait">'
-        slide_html += '</td>'
-        slide_html += '<td style="vertical-align: top;">'
+        
+        # Text column
+        slide_html += '<div class="intro-text-content">'
         slide_html += f'<h2 class="section-title">{html.escape(slide["title"])}</h2>'
         slide_html += f'<p class="main-text">{html.escape(slide["intro"])}</p>'
-        slide_html += '</td>'
-        slide_html += '</tr>'
+        slide_html += '</div></div>' # Close intro-text-content and top-area
         
+        # 2. INFO BLOCKS
         if slide.get("info_blocks"):
-            slide_html += '<tr><td colspan="2"><hr class="separator"></td></tr>'
             
-            columns_title = slide["info_blocks"][0].get("section_title", "Основные моменты")
-            slide_html += f'<tr><td colspan="2"><h2 class="columns-title">{html.escape(columns_title)}</h2></td></tr>'
+            # Subtitle/Section Title
+            columns_title = slide["info_blocks"][0].get("section_title", "Ключевые моменты")
+            slide_html += f'<h2 class="section-title">{html.escape(columns_title)}</h2>'
             
-            slide_html += '<tr><td colspan="2">'
-            slide_html += '<table class="info-blocks-table">'
-            for j in range(0, len(slide["info_blocks"]), 2):
-                slide_html += '<tr>'
-                block1 = slide["info_blocks"][j]
-                slide_html += f'<td><h3>{html.escape(block1["title"])}</h3><p>{html.escape(block1["text"])}</p></td>'
-                if j + 1 < len(slide["info_blocks"]):
-                    block2 = slide["info_blocks"][j + 1]
-                    slide_html += f'<td><h3>{html.escape(block2["title"])}</h3><p>{html.escape(block2["text"])}</p></td>'
-                else:
-                    slide_html += '<td></td>'
-                slide_html += '</tr>'
-            slide_html += '</table>'
-            slide_html += '</td></tr>'
+            slide_html += '<div class="info-blocks-grid">'
+            for block in slide["info_blocks"]:
+                slide_html += '<div class="info-block-item">'
+                slide_html += f'<h3 class="block-title">{html.escape(block["title"])}</h3>'
+                slide_html += f'<p class="main-text">{html.escape(block["text"])}</p>'
+                slide_html += '</div>'
+            slide_html += '</div>' # Close info-blocks-grid
 
-        slide_html += '</table>'
-        slide_html += '</div>'
+        # 3. FOOTER
+        slide_html += f'<div class="footer">Страница {i + 1}</div>' 
+        slide_html += '</div>' # Close page
         slides_html += slide_html
 
     final_html = html_head + slides_html + "</body></html>"
@@ -191,198 +247,29 @@ def create_presentation_pdf(user_id, slides_data):
     
     return filename
 
-# --- 5. ОБРАБОТЧИКИ TELEGRAM ---
+# --- 5. ОБРАБОТЧИКИ TELEGRAM (без изменений, скопировать из последнего рабочего кода) ---
+
+# ... (Оставьте все функции Telegram, DB, Gemini, Webhook, start_generation_process без изменений)
 
 def get_main_menu_keyboard():
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-    keyboard.add(types.KeyboardButton("Создать презентацию 🎨"), types.KeyboardButton("Ответы на вопросы ❓"), types.KeyboardButton("Профиль 👤"))
-    return keyboard
-
+# ...
 @bot.message_handler(commands=['start'])
 def handle_start(message):
-    user_sessions.pop(message.from_user.id, None)
-    bot.send_message(message.chat.id, "👋 **Привет!**\n\nЯ AI-ассистент для создания стильных PDF-презентаций.", reply_markup=get_main_menu_keyboard(), parse_mode='Markdown')
-
+# ...
 @bot.message_handler(func=lambda msg: msg.text == "Профиль 👤")
 def handle_profile(message):
-    user_id = message.from_user.id
-    p_count, q_count, topics, questions = get_user_profile_data(user_id)
-    
-    topic_list = "\n".join([f"  • *{topic[:35]}...*" for topic in topics]) if topics else "  Нет данных"
-    q_list = "\n".join([f"  • *{q[:35]}...*" for q in questions]) if questions else "  Нет данных"
-
-    profile_text = f"""
-**Профиль пользователя** 👤
----
-**Создано презентаций:** {p_count}
-**Задано вопросов:** {q_count}
-
-**Последние темы презентаций:**
-{topic_list}
-
-**Последние вопросы:**
-{q_list}
-    """
-    bot.send_message(message.chat.id, profile_text, parse_mode='Markdown')
-
-@bot.message_handler(func=lambda msg: msg.text == "Ответы на вопросы ❓")
-def handle_qna_start(message):
-    user_id = message.from_user.id
-    user_sessions[user_id] = {'state': 'waiting_qna_question'}
-    bot.send_message(message.chat.id, "💬 **Задайте любой вопрос.** Я использую Gemini, чтобы дать точный и развернутый ответ.", reply_markup=types.ReplyKeyboardRemove())
-
-@bot.message_handler(func=lambda msg: msg.text == "Создать презентацию 🎨")
-def handle_presentation_start(message):
-    user_id = message.from_user.id
-    user_sessions[user_id] = {'state': 'waiting_topic'}
-    bot.send_message(message.chat.id, "✨ **Введите тему презентации.**\n\n_Например: 'Будущее квантовых компьютеров' или 'История римских легионов'._", reply_markup=types.ReplyKeyboardRemove())
-
+# ...
+# ... (и так далее, до самого конца файла main.py)
+# ...
 @bot.message_handler(content_types=['text'])
 def handle_text_messages(message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-    session = user_sessions.get(user_id)
-
-    # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ---
-    # Если это сообщение соответствует кнопке главного меню, мы просто игнорируем его здесь,
-    # так как оно уже обработано соответствующими @bot.message_handler выше.
-    if message.text in ["Создать презентацию 🎨", "Ответы на вопросы ❓", "Профиль 👤"]:
-        return
-
-    # Решта логіки (для введення тексту теми або питання):
-    if not session:
-        return handle_start(message)
-    
-    if session['state'] == 'waiting_topic':
-        session['topic'] = message.text
-        session['state'] = 'waiting_slide_count'
-        
-        keyboard = types.InlineKeyboardMarkup(row_width=3)
-        keyboard.add(types.InlineKeyboardButton("3 слайда", callback_data='slide_count_3'),
-                     types.InlineKeyboardButton("5 слайдов", callback_data='slide_count_5'),
-                     types.InlineKeyboardButton("7 слайдов", callback_data='slide_count_7'))
-        keyboard.add(types.InlineKeyboardButton("10 слайдов", callback_data='slide_count_10'),
-                     types.InlineKeyboardButton("15 слайдов", callback_data='slide_count_15'))
-        
-        bot.send_message(chat_id, f"Тема: _{session['topic']}_\n\n🔢 **Выберите количество слайдов:**", reply_markup=keyboard, parse_mode='Markdown')
-
-    elif session['state'] == 'waiting_qna_question':
-        handle_qna_question(message)
-        
-    else:
-        if session.get('state') != 'generating':
-            return handle_start(message)
-
-def is_math_query(text: str):
-    return bool(re.search(r'\d[\+\-\*\/]\d', text) or re.search(r'\b(что|как|почему|объясни|зачем)\b', text, re.IGNORECASE))
-
-def handle_qna_question(message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-    
-    if not GEMINI_API_KEY or not is_math_query(message.text):
-        bot.send_message(chat_id, "Извините, эта функция работает только для сложных вопросов, требующих расчетов или развернутого ответа.")
-        user_sessions.pop(user_id, None)
-        return bot.send_message(chat_id, "Готов к новым задачам!", reply_markup=get_main_menu_keyboard())
-
-    last_msg = bot.send_message(chat_id, "⏳ Думаю над ответом...")
-    save_question_history(user_id, message.text)
-    
-    try:
-        prompt = f"Ответь максимально подробно и четко на вопрос: {message.text}"
-        response_text = call_gemini(prompt)
-        bot.edit_message_text(f"✅ **Ответ готов:**\n\n{response_text}", chat_id, last_msg.message_id, parse_mode='Markdown')
-        
-    except ConnectionError:
-        bot.edit_message_text("🚫 Ошибка: Ключ Gemini API не установлен.", chat_id, last_msg.message_id)
-    except Exception as e:
-        bot.edit_message_text(f"🚫 Произошла ошибка при получении ответа: {e}", chat_id, last_msg.message_id)
-    finally:
-        user_sessions.pop(user_id, None)
-        bot.send_message(chat_id, "Готов к новым задачам!", reply_markup=get_main_menu_keyboard())
-
-def start_generation_process(user_id, chat_id, slide_count):
-    session = user_sessions.get(user_id)
-    if not session: return
-        
-    session['state'] = 'generating'
-    last_msg_id = session.get('last_msg_id')
-    
-    temp_files = []
-    pdf_file = None
-    try:
-        bot.edit_message_text("⏳ Генерирую контент (1/3)...", chat_id, last_msg_id)
-        
-        prompt = (
-            f"Создай контент для презентации в журнальном стиле из {slide_count} слайдов на тему '{session['topic']}'. "
-            f"Для КАЖДОГО из {slide_count} слайдов верни JSON-объект с ключами: "
-            f"'title' (основной заголовок слайда), "
-            f"'intro' (вступительный текст на 2-3 развернутых абзаца), "
-            f"'image_query' (запрос для красивого портретного или пейзажного изображения), "
-            f"'info_blocks' (массив из 2 или 4 объектов. У первого объекта должен быть ключ 'section_title', например, 'Ключевые принципы'). "
-            f"У всех объектов должны быть ключи 'title' и 'text' (текст должен быть подробным, на 3-5 предложений)). "
-            f"В итоге верни ОДИН БОЛЬШОЙ JSON-массив, содержащий все {slide_count} объектов."
-        )
-        
-        slides_structure = call_gemini(prompt, is_json=True)
-        if not isinstance(slides_structure, list) or not slides_structure:
-            raise ValueError("AI вернул некорректную структуру данных.")
-        
-        save_presentation_topic(user_id, session['topic'])
-        slides_data = []
-        
-        bot.edit_message_text("✅ Контент готов. Ищу красивые фото (2/3)...", chat_id, last_msg_id)
-        
-        for i, slide_struct in enumerate(slides_structure):
-            image_query = slide_struct.get('image_query')
-            image_path = find_image_pixabay(image_query, user_id, fallback_query=session['topic'])
-            
-            slide_struct['image_path'] = image_path
-            slides_data.append(slide_struct)
-            if image_path: temp_files.append(image_path)
-
-        bot.edit_message_text("✅ Фото найдены. Собираю PDF (3/3)...", chat_id, last_msg_id)
-        pdf_file = create_presentation_pdf(user_id, slides_data)
-        
-        with open(pdf_file, 'rb') as doc:
-            bot.send_document(chat_id, doc, caption="Ваша презентация готова!")
-
-    except Exception as e:
-        logging.error(f"Ошибка в процессе генерации: {e}")
-        bot.send_message(chat_id, f"🚫 Произошла критическая ошибка: {e}")
-    finally:
-        if pdf_file and os.path.exists(pdf_file): os.remove(pdf_file)
-        for f in temp_files:
-            if f and os.path.exists(f): os.remove(f)
-        user_sessions.pop(user_id, None)
-        bot.send_message(chat_id, "Готов к новым задачам!", reply_markup=get_main_menu_keyboard())
-
-
+# ... (обязательно оставьте критическое исправление с 'if message.text in [...]')
+# ...
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    message_id = call.message.message_id
-    session = user_sessions.get(user_id)
-
-    if not session or session.get('state') != 'waiting_slide_count':
-        bot.answer_callback_query(call.id, "Сессия устарела. Начните сначала.", show_alert=True)
-        return handle_start(call.message)
-
-    if call.data.startswith('slide_count_'):
-        slide_count = int(call.data.split('_')[2])
-        session['slide_count'] = slide_count
-        session['last_msg_id'] = message_id
-        
-        bot.edit_message_reply_markup(chat_id, message_id)
-        
-        start_generation_process(user_id, chat_id, slide_count)
-        
-    bot.answer_callback_query(call.id)
-    
+# ...
 
 # --- ЗАПУСК БОТА (Webhooks) ---
-# Блок Flask для Gunicorn (Production)
 app = Flask(__name__)
 
 @app.route('/' + TOKEN, methods=['POST'])
@@ -394,14 +281,12 @@ def get_message():
 
 @app.route('/')
 def webhook():
-    # Встановлює Webhook при першому запуску
     WEBHOOK_URL = f'https://{WEBHOOK_HOST}'
     bot.remove_webhook()
     bot.set_webhook(url=WEBHOOK_URL + '/' + TOKEN)
     logging.info("Webhook set successfully.")
     return "Bot started!", 200
 
-# Блок запуску для локального тестування (якщо запускається python main.py)
 if __name__ == '__main__':
     logging.info(f"Running locally on port {PORT}...")
     app.run(host="0.0.0.0", port=PORT)
