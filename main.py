@@ -1,6 +1,6 @@
 """
 Бот для создания AI-презентаций в PDF.
-Версия 36.6 - FINAL ARCHITECTURE: WeasyPrint (Webhook Startup Fix).
+Версия 36.7 - FINAL FIX: Webhook logic cleared for Gunicorn and button handler conflict fixed.
 """
 
 import os
@@ -191,7 +191,8 @@ def create_presentation_pdf(user_id, slides_data):
     
     return filename
 
-# --- 5. ОБРАБОТЧИКИ TELEGRAM (без изменений) ---
+# --- 5. ОБРАБОТЧИКИ TELEGRAM ---
+
 def get_main_menu_keyboard():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
     keyboard.add(types.KeyboardButton("Создать презентацию 🎨"), types.KeyboardButton("Ответы на вопросы ❓"), types.KeyboardButton("Профиль 👤"))
@@ -242,6 +243,13 @@ def handle_text_messages(message):
     chat_id = message.chat.id
     session = user_sessions.get(user_id)
 
+    # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ---
+    # Если это сообщение соответствует кнопке главного меню, мы просто игнорируем его здесь,
+    # так как оно уже обработано соответствующими @bot.message_handler выше.
+    if message.text in ["Создать презентацию 🎨", "Ответы на вопросы ❓", "Профиль 👤"]:
+        return
+
+    # Решта логіки (для введення тексту теми або питання):
     if not session:
         return handle_start(message)
     
@@ -396,5 +404,4 @@ def webhook():
 # Блок запуску для локального тестування (якщо запускається python main.py)
 if __name__ == '__main__':
     logging.info(f"Running locally on port {PORT}...")
-    # Це потрібно тільки для локального запуску, Gunicorn використовує змінну PORT
     app.run(host="0.0.0.0", port=PORT)
