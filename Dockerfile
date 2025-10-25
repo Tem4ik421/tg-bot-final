@@ -1,11 +1,18 @@
-# Використовуємо образ, який включає wkhtmltopdf
-FROM darylteo/wkhtmltopdf-alpine:latest
+# Використовуємо чистий, стабільний образ Python
+FROM python:3.11-slim
+
+# Встановлюємо wkhtmltopdf та всі необхідні системні залежності
+# Це найнадійніша команда для встановлення wkhtmltopdf на Debian/Ubuntu
+RUN apt-get update && apt-get install -y \
+    wkhtmltopdf \
+    libxrender1 \
+    libfontconfig1 \
+    libxtst6 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Встановлюємо робочу директорію
 WORKDIR /app
-
-# Встановлюємо Python та pip (цього не було в попередньому образі!)
-RUN apk add --no-cache python3 py3-pip
 
 # Копіюємо requirements.txt та встановлюємо Python-залежності
 COPY requirements.txt .
@@ -15,3 +22,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Команда для запуску бота
+CMD ["python3", "main.py"]
