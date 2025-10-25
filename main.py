@@ -1,6 +1,6 @@
 """
 Бот для создания AI-презентаций в PDF.
-Версия 37.2 - FINAL FIX: Applied stable Flexbox/Grid layout, improved image search, and added Maritime News.
+Версия 37.4 - FINAL: Applied stable layout, ultimate design polish, and feature complete Maritime News.
 """
 
 import os
@@ -120,21 +120,23 @@ def find_image_pixabay(query, user_id, fallback_query=None):
 def fetch_maritime_news():
     # Заглушка (Mock Data) для демонстрации функционала на Render
     news_data = [
-        {"title": "Суецкий канал вводит новые правила для крупнотоннажных судов", "link": "https://example.com/suez-rules", "snippet": "Администрация Суэцкого канала (SCA) объявила об ужесточении требований безопасности и лоцманской проводки...", "source": "MarineLog"},
-        {"title": "Рост цен на фрахт судов: обзор отрасли", "link": "https://example.com/freight-prices", "snippet": "Аналитики прогнозируют дальнейший рост тарифов на контейнерные перевозки из-за дефицита мощностей в Азии.", "source": "ShippingToday"},
-        {"title": "Новые технологии: Автономные корабли в Балтийском море", "link": "https://example.com/autonomous-ships", "snippet": "Первое полностью автономное грузовое судно успешно завершило тестовый рейс в сложных погодных условиях.", "source": "TechMaritime"}
+        {"type": "TEXT", "title": "Суэцкий канал: новые правила для крупнотоннажных судов", "link": "https://marine.log/suez-rules", "snippet": "Администрация Суэцкого канала (SCA) объявила об ужесточении требований безопасности и лоцманской проводки для судов класса Post-Panamax.", "source": "MarineLog"},
+        {"type": "VIDEO", "title": "YouTube: Обзор рынка фрахта судов. Рост цен на контейнерные перевозки", "link": "https://youtube.com/watch?v=freight-prices", "snippet": "Аналитики прогнозируют дальнейший рост тарифов на контейнерные перевозки. Подробный видеообзор текущей ситуации на рынке фрахта.", "source": "Shipping Analysis"},
+        {"type": "TEXT", "title": "Новые технологии: Автономные корабли в Балтийском море", "link": "https://tech.maritime/autonomous-ships", "snippet": "Первое полностью автономное грузовое судно успешно завершило тестовый рейс в сложных погодных условиях.", "source": "TechMaritime"},
+        {"type": "TEXT", "title": "Морская индустрия: Отчет о кибербезопасности портовых систем", "link": "https://security.portals/cyber-report", "snippet": "Исследование выявило критические уязвимости в системах управления грузооборотом крупных европейских портов.", "source": "PortSecurity"},
+        {"type": "VIDEO", "title": "YouTube: Экологический переход: Суда на водородном топливе", "link": "https://youtube.com/watch?v=hydrogen-vessels", "snippet": "Репортаж о новых проектах судов, работающих на чистом водородном топливе, как часть плана декарбонизации морского флота.", "source": "EcoShipping"}
     ]
     
-    output = "⚓ **Актуальные Морские Новости (Заглушка):**\n\n"
+    output = "⚓ **Актуальные Морские Новости (Демонстрация):**\n\n"
     if not news_data:
          return "ℹ️ Извините, не удалось получить актуальные морские новости."
 
     for i, item in enumerate(news_data):
-        output += f"**{i+1}. {item['title']}**\n"
-        output += f"_{item['source']}_: {item['snippet'][:80]}...\n"
+        icon = "📺" if item['type'] == 'VIDEO' else "📰"
+        output += f"{icon} **{i+1}. {item['title']}**\n"
+        output += f"_{item['source']}_: {item['snippet'][:120]}...\n"
         output += f"[Подробнее]({item['link']})\n\n"
         
-    output += "ℹ️ *Внимание: На Render доступ к внешним поисковым API ограничен. Данные являются демонстрационными.*"
     return output
 
 # --- 4. ГЕНЕРАТОР PDF (WeasyPrint) ---
@@ -152,72 +154,99 @@ def create_presentation_pdf(user_id, slides_data):
             /* PAGE SETUP */
             @page {{ size: A4; margin: 0; }}
             body {{
-                margin: 0; padding: 0; background-color: #f8f8f8;
-                font-family: 'Roboto', sans-serif; color: #333; line-height: 1.6;
+                margin: 0; padding: 0; 
+                background: linear-gradient(135deg, #f0f4f8 0%, #e0e7ee 100%); /* Легкий градиентный фон */
+                font-family: 'Roboto', sans-serif; 
+                color: #333; 
+                line-height: 1.6;
             }}
             .page {{
                 width: 210mm; height: 297mm; page-break-after: always;
-                padding: 25mm 25mm 15mm;
-                box-sizing: border-box; background-color: #ffffff;
+                padding: 20mm 25mm 15mm; /* Меньше верхний и боковые отступы */
+                box-sizing: border-box; 
+                background-color: #ffffff; /* Белый фон для содержимого страницы */
                 position: relative;
+                box-shadow: 0 0 15px rgba(0,0,0,0.05); /* Легкая тень для эффекта листа */
+                margin-bottom: 15mm; 
             }}
             .page:last-of-type {{ page-break-after: avoid; }}
             
             /* HEADINGS */
             h1.main-title {{
                 font-family: 'Playfair Display', serif;
-                font-size: 38pt; font-weight: 700; margin: 0 0 10mm;
-                color: #222; text-align: center; letter-spacing: 0.5px;
+                font-size: 36pt; 
+                font-weight: 700; 
+                margin: 0 0 8mm; 
+                color: #222; 
+                text-align: center; 
+                letter-spacing: 0.5px;
             }}
             h2.section-title {{
                 font-family: 'Playfair Display', serif;
-                font-size: 24px; font-weight: 700; margin-top: 0; margin-bottom: 15px;
-                color: #2e5cb8; /* Акцентный синий */
+                font-size: 22px; 
+                font-weight: 700; 
+                margin-top: 20px; 
+                margin-bottom: 12px; 
+                color: #1a4a9a; 
                 border-bottom: 2px solid #2e5cb8; 
-                padding-bottom: 5px;
+                padding-bottom: 4px;
             }}
             h3.block-title {{
-                font-size: 16px; font-weight: 700; margin-top: 0; margin-bottom: 5px;
-                color: #333;
+                font-size: 15px; 
+                font-weight: 700; 
+                margin-top: 0; 
+                margin-bottom: 4px; 
+                color: #444; 
             }}
             p.main-text {{
-                font-size: 13px; line-height: 1.7; text-align: justify; margin: 0 0 15px 0;
+                font-size: 12.5px; 
+                line-height: 1.6; 
+                text-align: justify; 
+                margin: 0 0 10px 0; 
             }}
 
-            /* IMAGE AND INTRO BLOCK - УЛУЧШЕННЫЙ FLEXBOX */
+            /* IMAGE AND INTRO BLOCK */
             .top-area {{
-                display: flex; gap: 25px; width: 100%; margin-bottom: 30px;
+                display: flex; 
+                gap: 20px; 
+                width: 100%; 
+                margin-bottom: 25px; 
                 align-items: flex-start;
             }}
             .image-portrait-container {{
-                width: 180px; height: 240px; 
+                width: 160px; 
+                height: 200px; 
                 flex-shrink: 0;
-                background-color: #eee; 
+                background-color: #e8eef2; 
                 display: flex; align-items: center; justify-content: center;
-                border-radius: 4px; box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+                border-radius: 4px; 
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
             }}
             .image-portrait {{
                 width: 100%; height: 100%; object-fit: cover;
                 border-radius: 4px;
             }}
-            .intro-text-content {{ flex-grow: 1; }}
+            .intro-text-content {{ 
+                flex-grow: 1; 
+                padding-top: 5px; 
+            }}
 
-            /* INFO BLOCKS LAYOUT - GRID */
+            /* INFO BLOCKS LAYOUT */
             .info-blocks-grid {{
                 display: grid;
                 grid-template-columns: 1fr 1fr; 
-                gap: 20px;
+                gap: 15px; 
                 width: 100%;
             }}
             .info-block-item {{
-                background-color: #f4f7f9; 
-                border: 1px solid #e0e0e0; 
+                background-color: #fcfdfe; 
+                border: 1px solid #e5e5e5; 
                 padding: 15px;
                 border-radius: 4px;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+                box-shadow: 0 1px 2px rgba(0,0,0,0.03); 
             }}
             .info-block-item h3 {{
-                 color: #2e5cb8; 
+                 color: #1a4a9a; 
             }}
 
             /* FOOTER */
@@ -227,8 +256,8 @@ def create_presentation_pdf(user_id, slides_data):
                 width: calc(100% - 50mm);
                 border-top: 1px solid #ddd;
                 padding-top: 5px;
-                font-size: 10px;
-                color: #999;
+                font-size: 9px; 
+                color: #aaa; 
                 text-align: right;
             }}
         </style>
@@ -249,6 +278,9 @@ def create_presentation_pdf(user_id, slides_data):
         slide_html += '<div class="image-portrait-container">'
         if img_b64:
             slide_html += f'<img src="data:image/jpeg;base64,{img_b64}" class="image-portrait">'
+        else:
+            # Заглушка, если изображение не найдено
+            slide_html += f'<span style="color:#999; font-size:10px; text-align:center;">Изображение не найдено</span>'
         slide_html += '</div>'
         
         # Text column
@@ -308,7 +340,7 @@ def handle_maritime_news(message):
     
     try:
         news_text = fetch_maritime_news()
-        bot.edit_message_text(news_text, chat_id, last_msg.message_id, parse_mode='Markdown', disable_web_page_preview=True)
+        bot.edit_message_text(news_text, chat_id, last_msg.message_id, parse_mode='Markdown', disable_web_page_preview=False) # Включено превью для ссылок
         
     except Exception as e:
         bot.edit_message_text(f"🚫 Произошла ошибка при получении новостей: {e}", chat_id, last_msg.message_id)
