@@ -1,8 +1,8 @@
 ﻿telebot
-pdfkit
 google-generativeai
 requests
 python-dotenv
 Pillow
-Flask  <--- ДОДАЙТЕ ЦЕ
-gunicorn <--- ДОДАЙТЕ ЦЕ (для запуску веб-сервера)
+Flask
+gunicorn
+WeasyPrint

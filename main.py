@@ -1,6 +1,6 @@
 """
 Бот для создания AI-презентаций в PDF.
-Версия 36.3 - FINAL ARCHITECTURE: Webhooks and Flask.
+Версия 36.4 - FINAL SOLUTION: WeasyPrint.
 """
 
 import os
@@ -18,7 +18,7 @@ from datetime import datetime
 from flask import Flask, request 
 import telebot
 from telebot import types
-import pdfkit
+from weasyprint import HTML # <--- НОВЫЙ ИМПОРТ
 import google.generativeai as genai
 from PIL import Image
 
@@ -33,13 +33,7 @@ PORT = int(os.environ.get('PORT', 5000)) # Порт, который предос
 
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 
-# Конфигурация pdfkit (теперь работает благодаря Docker/Buildpack)
-try:
-    config = pdfkit.configuration() 
-except OSError as e:
-    logging.error(f"Ошибка инициализации pdfkit: {e}. Убедитесь, что 'wkhtmltopdf' установлен.")
-    config = None 
-
+# Конфигурация pdfkit (УДАЛЕНО, так как WeasyPrint не требует внешней конфигурации)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 user_sessions = {}
 
@@ -115,18 +109,17 @@ def find_image_pixabay(query, user_id, fallback_query=None):
                 img_path = os.path.abspath(f"temp_img_{user_id}_{int(time.time())}.jpg")
                 with open(img_path, 'wb') as f: f.write(img_resp.content)
                 return img_path
-        except Exception as e: logging.warning(f"Ошибка Pixabay для '{q}': {e}")
+            except Exception as e: logging.warning(f"Ошибка Pixabay для '{q}': {e}")
     return None
 
 # --- 4. ГЕНЕРАТОР PDF (ФИНАЛЬНАЯ ВЕРСТКА НА ТАБЛИЦАХ) ---
 def create_presentation_pdf(user_id, slides_data):
-    if not config: 
-        raise RuntimeError("PDF-генератор не может быть запущен: wkhtmltopdf не сконфигурирован.")
-
+    # WeasyPrint не требует предварительной конфигурации!
     filename = f'presentation_{user_id}.pdf'
     html_head = f"""
     <html><head><meta charset="UTF-8"><title>Презентация</title>
     <style>
+        @page {{ size: A4; margin: 0; }} /* WeasyPrint использует @page для A4 */
         body {{ margin: 0; padding: 0; background-color: #fff; font-family: 'Times New Roman', Times, serif; color: #333; }}
         .page {{ 
             width: 210mm; height: 297mm; page-break-after: always; 
@@ -194,8 +187,10 @@ def create_presentation_pdf(user_id, slides_data):
         slides_html += slide_html
 
     final_html = html_head + slides_html + "</body></html>"
-    options = {'page-size':'A4', 'margin-top':'0', 'margin-right':'0', 'margin-bottom':'0', 'margin-left':'0', 'encoding':"UTF-8"}
-    pdfkit.from_string(final_html, filename, options=options, configuration=config)
+    
+    # --- ЗАМЕНА PDFKIT НА WEASYPRINT ---
+    HTML(string=final_html).write_pdf(filename)
+    
     return filename
 
 # --- 5. ОБРАБОТЧИКИ TELEGRAM ---
@@ -214,8 +209,8 @@ def handle_profile(message):
     user_id = message.from_user.id
     p_count, q_count, topics, questions = get_user_profile_data(user_id)
     
-    topic_list = "\n".join([f"  • *{topic[:35]}...*" for topic in topics]) if topics else "  Нет данных"
-    q_list = "\n".join([f"  • *{q[:35]}...*" for q in questions]) if questions else "  Нет данных"
+    topic_list = "\n".join([f"  • *{topic[:35]}...*" for topic in topics]) if topics else "  Нет данных"
+    q_list = "\n".join([f"  • *{q[:35]}...*" for q in questions]) if questions else "  Нет данных"
 
     profile_text = f"""
 **Профиль пользователя** 👤
@@ -303,11 +298,6 @@ def handle_qna_question(message):
 def start_generation_process(user_id, chat_id, slide_count):
     session = user_sessions.get(user_id)
     if not session: return
-    
-    if not config:
-        bot.send_message(chat_id, "🚫 Критическая ошибка: Не могу запустить PDF-генератор. Убедитесь, что 'wkhtmltopdf' установлен на сервере.")
-        user_sessions.pop(user_id, None)
-        return bot.send_message(chat_id, "Готов к новым задачам!", reply_markup=get_main_menu_keyboard())
         
     session['state'] = 'generating'
     last_msg_id = session.get('last_msg_id')
@@ -343,6 +333,7 @@ def start_generation_process(user_id, chat_id, slide_count):
             
             slide_struct['image_path'] = image_path
             slides_data.append(slide_struct)
+            if image_path: temp_files.append(image_path) # Добавляем фото в список на удаление
 
         bot.edit_message_text("✅ Фото найдены. Собираю PDF (3/3)...", chat_id, last_msg_id)
         pdf_file = create_presentation_pdf(user_id, slides_data)
@@ -351,6 +342,7 @@ def start_generation_process(user_id, chat_id, slide_count):
             bot.send_document(chat_id, doc, caption="Ваша презентация готова!")
 
     except Exception as e:
+        logging.error(f"Ошибка в процессе генерации: {e}")
         bot.send_message(chat_id, f"🚫 Произошла критическая ошибка: {e}")
     finally:
         if pdf_file and os.path.exists(pdf_file): os.remove(pdf_file)
@@ -384,14 +376,27 @@ def handle_callbacks(call):
     
 
 # --- ЗАПУСК БОТА ---
+# Используйте Flask для запуска в окружении Render
 if __name__ == '__main__':
-    print("Бот запущен (v36.2 - FINAL FIX for Render/Docker startup)...")
-    while True:
-        try:
-            if config is None:
-                print("ПРЕДУПРЕЖДЕНИЕ: wkhtmltopdf не сконфигурирован. Функции PDF могут не работать.")
-            
-            bot.polling(none_stop=True)
-        except Exception as e:
-            print(f"Критическая ошибка! Перезапуск через 15 секунд. Ошибка: {e}")
-            time.sleep(15)
+    # Настройка Webhook URL для Render
+    WEBHOOK_URL = f'https://{WEBHOOK_HOST}'
+
+    # Создание Flask-приложения (Убедитесь, что gunicorn установлен в requirements.txt)
+    app = Flask(__name__)
+
+    @app.route('/' + TOKEN, methods=['POST'])
+    def get_message():
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return "!", 200
+
+    @app.route('/')
+    def webhook():
+        bot.remove_webhook()
+        bot.set_webhook(url=WEBHOOK_URL + '/' + TOKEN)
+        return "Bot started!", 200
+
+    # Запуск Flask-приложения (будет переопределено Gunicorn при деплое)
+    print(f"Бот запущен на порту {PORT} (v36.4 - WeasyPrint FIX)...")
+    app.run(host="0.0.0.0", port=PORT)
