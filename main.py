@@ -121,10 +121,10 @@ def fetch_maritime_news():
     # Заглушка (Mock Data) с рабочими ссылками для превью
     news_data = [
         {"type": "TEXT", "title": "Угроза безопасности в Красном море. Новые страховые тарифы", "link": "https://www.ft.com/content/88a2f4a4-5a7a-4c91-9e73-b3c921a221f0", "snippet": "Крупные судоходные компании столкнулись с резким повышением страховых тарифов из-за напряженной обстановки в регионе...", "source": "Financial Times"},
-        {"type": "VIDEO", "title": "Экономика: Как кризис в логистике повлиял на фрахт контейнеровозов", "link": "https://www.youtube.com/watch?v=kYJj8G8gI2U", "snippet": "Видеообзор: Анализ мирового рынка контейнерных перевозок, прогноз цен и дефицит мощностей в Азии.", "source": "Bloomberg TV"},
+        {"type": "VIDEO", "title": "Экономика: Как кризис в логистике повлиял на фрахт контейнеровозов", "link": "https://www.youtube.com/watch?v=R9_uE-7tB0A", "snippet": "Видеообзор: Анализ мирового рынка контейнерных перевозок, прогноз цен и дефицит мощностей в Азии.", "source": "Bloomberg TV"},
         {"type": "TEXT", "title": "Европа и США вводят ограничения на импорт российских алмазов", "link": "https://www.maritime-executive.com/article/g7-to-introduce-ban-on-russian-diamonds", "snippet": "Страны G7 договорились о введении нового пакета ограничений, который коснется морских перевозок и торговли алмазами...", "source": "Maritime Executive"},
         {"type": "TEXT", "title": "Новые технологии: Полностью автономный сухогруз завершил испытания", "link": "https://www.vesselfinder.com/news/31969-Autonomous-Container-Ship-Completes-First-Sea-Trial", "snippet": "Первое полностью автономное грузовое судно успешно завершило тестовый рейс в сложных погодных условиях Балтийского моря.", "source": "VesselFinder"},
-        {"type": "VIDEO", "title": "Торговые пути: Индия развивает порты для конкуренции с Китаем", "link": "https://www.youtube.com/watch?v=yYJ6yJ7I6z0", "snippet": "Видео: Инфраструктурные проекты в Индии, направленные на модернизацию портовых комплексов и увеличение грузопотока.", "source": "World Shipping News"}
+        {"type": "VIDEO", "title": "Торговые пути: Индия развивает порты для конкуренции с Китаем", "link": "https://www.youtube.com/watch?v=Fj_t_S5zV5U", "snippet": "Видео: Инфраструктурные проекты в Индии, направленные на модернизацию портовых комплексов и увеличение грузопотока.", "source": "World Shipping News"}
     ]
     
     output = "⚓ **Актуальные Морские Новости:**\n\n"
@@ -135,7 +135,8 @@ def fetch_maritime_news():
         icon = "📺" if item['type'] == 'VIDEO' else "📰"
         output += f"{icon} **{i+1}. {item['title']}**\n"
         output += f"_{item['source']}_: {item['snippet'][:120]}...\n"
-        output += f"\n{item['link']}\n" # Коректне форматування для прев'ю
+        # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Отправляем ссылку на отдельном чистом рядке 
+        output += f"\n{item['link']}\n" 
         
     return output
 
@@ -167,27 +168,19 @@ def create_presentation_pdf(user_id, slides_data):
                 background-color: #ffffff; 
                 position: relative;
                 box-shadow: 0 0 15px rgba(0,0,0,0.05); 
+                margin-bottom: 15mm; 
             }}
             .page:last-of-type {{ page-break-after: avoid; }}
             
             /* HEADINGS */
-            h1.main-title {{
-                font-family: 'Playfair Display', serif;
-                font-size: 36pt; 
-                font-weight: 700; 
-                margin: 0 0 8mm; 
-                color: #222; 
-                text-align: center; 
-                letter-spacing: 0.5px;
-            }}
             h2.section-title {{
                 font-family: 'Playfair Display', serif;
                 font-size: 22px; 
                 font-weight: 700; 
-                margin-top: 15px; /* Уменьшено */
-                margin-bottom: 8px; /* Уменьшено */
+                margin-top: 15px; 
+                margin-bottom: 8px; 
                 color: #1a4a9a; 
-                border-bottom: 3px solid #ccc; /* Чуть толще, чтобы акцентировать */
+                border-bottom: 3px solid #ccc; 
                 padding-bottom: 5px;
             }}
             h3.block-title {{
@@ -195,13 +188,13 @@ def create_presentation_pdf(user_id, slides_data):
                 font-weight: 700; 
                 margin-top: 0; 
                 margin-bottom: 3px; 
-                color: #1a4a9a; /* Заголовки блоков сделаны синими для акцента */
+                color: #1a4a9a; 
             }}
             p.main-text {{
                 font-size: 12.5px; 
                 line-height: 1.6; 
                 text-align: justify; 
-                margin: 0 0 5px 0; /* Минимальный отступ между параграфами */
+                margin: 0 0 5px 0; 
             }}
 
             /* IMAGE AND INTRO BLOCK */
@@ -227,10 +220,10 @@ def create_presentation_pdf(user_id, slides_data):
             }}
             .intro-text-content {{ 
                 flex-grow: 1; 
-                padding-top: 2px; 
+                padding-top: 5px; 
             }}
 
-            /* INFO BLOCKS LAYOUT - КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ДЛЯ СИММЕТРИИ */
+            /* INFO BLOCKS LAYOUT */
             .info-blocks-container {{ 
                  width: 100%;
                  display: flex; 
@@ -242,7 +235,7 @@ def create_presentation_pdf(user_id, slides_data):
                 grid-template-columns: 1fr 1fr; 
                 gap: 15px;
                 width: 100%;
-                align-items: stretch; /* Растягивает элементы на одинаковую высоту */
+                align-items: stretch; 
             }}
             .info-block-item {{
                 background-color: #fcfdfe; 
@@ -445,7 +438,6 @@ def handle_qna_question(message):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    # Бот теперь отвечает на ВСЕ вопросы.
     if not GEMINI_API_KEY:
         bot.send_message(chat_id, "🚫 Ошибка: Ключ Gemini API не установлен.")
         user_sessions.pop(user_id, None)
