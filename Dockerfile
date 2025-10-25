@@ -1,10 +1,13 @@
 # Використовуємо чистий, стабільний образ Alpine
 FROM alpine:latest
 
-# Встановлюємо Python, wkhtmltopdf та всі необхідні залежності
-# Цей рядок гарантує, що всі інструменти встановлені коректно
+# Додаємо Edge-репозиторій для встановлення wkhtmltopdf
+RUN echo "@edge http://nl.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories && \
+    echo "@edge http://nl.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
+
+# Встановлюємо wkhtmltopdf, Python та всі необхідні залежності
 RUN apk update && \
-    apk add --no-cache python3 py3-pip wkhtmltopdf \
+    apk add --no-cache python3 py3-pip wkhtmltopdf@edge \
     && rm -rf /var/cache/apk/*
 
 # Встановлюємо робочу директорію
