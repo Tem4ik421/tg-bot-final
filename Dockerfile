@@ -7,7 +7,7 @@ RUN apk update && apk add --no-cache wget
 
 # Завантажуємо та встановлюємо wkhtmltopdf (інша версія та посилання)
 # Це надійне посилання на v0.12.5 для Alpine
-RUN wget https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/0.12.5/wkhtmltox_0.12.5-1.alpine3.10_amd64.tar.xz && \
+RUN wget https://downloads.wkhtmltopdf.org/0.12/0.12.5/wkhtmltox_0.12.5-1.alpine3.10_amd64.tar.xz && \
     tar xvf wkhtmltox_0.12.5-1.alpine3.10_amd64.tar.xz && \
     cp wkhtmltox/bin/wkhtmltopdf /usr/bin/wkhtmltopdf && \
     rm -rf wkhtmltox_0.12.5-1.alpine3.10_amd64.tar.xz wkhtmltox
