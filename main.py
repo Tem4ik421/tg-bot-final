@@ -1,6 +1,6 @@
 """
 Бот для создания AI-презентаций в PDF.
-Версия 37.1 - FINAL FIX: Applied stable Flexbox/Grid layout and improved image search (Magazine Style).
+Версия 37.2 - FINAL FIX: Applied stable Flexbox/Grid layout, improved image search, and added Maritime News.
 """
 
 import os
@@ -12,7 +12,7 @@ import html
 import base64
 import time
 import json
-import random # Добавлен для случайного выбора изображений
+import random 
 from datetime import datetime
 
 # Импорты для Webhooks
@@ -23,14 +23,14 @@ from weasyprint import HTML
 import google.generativeai as genai
 from PIL import Image
 
-# --- 1. ЗАГРУЗКА НАСТРОЕК (Чтение ключей напрямую из окружения Render) ---
+# --- 1. ЗАГРУЗКА НАСТРОЕК ---
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 PIXABAY_API_KEY = os.getenv('PIXABAY_API_KEY')
 
 # Настройки для Webhooks
-WEBHOOK_HOST = os.getenv('WEBHOOK_HOST') # URL, который предоставит Render
-PORT = int(os.environ.get('PORT', 5000)) # Порт, который предоставит хостинг
+WEBHOOK_HOST = os.getenv('WEBHOOK_HOST') 
+PORT = int(os.environ.get('PORT', 5000)) 
 
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 
@@ -78,8 +78,6 @@ init_db()
 
 # --- 3. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 def call_gemini(prompt, is_json=False):
-    # ! На Render нет доступа к Google Search Tool, поэтому эта функция 
-    # ! используется только для генерации контента.
     if not gemini_model: raise ConnectionError("Модель Gemini не инициализирована.")
     mime_type = "application/json" if is_json else "text/plain"
     config_gemini = genai.types.GenerationConfig(response_mime_type=mime_type)
@@ -96,24 +94,19 @@ def find_image_pixabay(query, user_id, fallback_query=None):
     base_queries = [q for q in [query, fallback_query] if q and q.strip()]
     if not base_queries: base_queries.append("minimalist abstract")
     
-    # Расширенный набор ключевых слов для профессионального/арт-вида
-    artistic_keywords = ["photorealistic", "cinematic lighting", "dramatic", "masterpiece", "professional photography", "concept art"]
+    artistic_keywords = ["professional photography", "concept art", "high quality", "detailed", "artistic illustration"]
     
-    # 1. Попробуем сначала с художественными ключевыми словами
     queries_to_try = [f"{base_queries[0]} {keyword}" for keyword in artistic_keywords]
-    # 2. Затем попробуем основные запросы
     queries_to_try.extend(base_queries)
-    # 3. Добавим абстрактный фон, чтобы избежать повторов
-    queries_to_try.append(f"abstract theme for {base_queries[0]}") 
+    queries_to_try.append("minimalist professional abstract background") 
 
     for q in queries_to_try:
         try:
-            params = {'key': PIXABAY_API_KEY, 'q': q, 'image_type': 'photo', 'safesearch': 'true', 'per_page': 5, 'orientation': 'horizontal'}
+            params = {'key': PIXABAY_API_KEY, 'q': q, 'image_type': 'photo', 'safesearch': 'true', 'per_page': 10, 'orientation': 'horizontal'}
             res = requests.get("https://pixabay.com/api/", params=params, timeout=15); res.raise_for_status()
             data = res.json().get('hits', [])
             
             if data:
-                # Берем случайное изображение из первых 5, чтобы избежать повторов
                 img_url = random.choice(data)['largeImageURL'] 
                 
                 img_resp = requests.get(img_url, timeout=15); img_resp.raise_for_status()
@@ -124,13 +117,8 @@ def find_image_pixabay(query, user_id, fallback_query=None):
     
     return None
 
-# НОВАЯ ФУНКЦИЯ: Фейковый поиск новостей (поскольку Gemini Search Tool не работает на Render)
 def fetch_maritime_news():
-    # На Render нет доступа к Google Search Tool, поэтому мы используем заглушку
-    # для демонстрации функционала. В реальных условиях здесь должен быть
-    # вызов внешнего News API или Google Search API.
-    
-    # Заглушка (Mock Data)
+    # Заглушка (Mock Data) для демонстрации функционала на Render
     news_data = [
         {"title": "Суецкий канал вводит новые правила для крупнотоннажных судов", "link": "https://example.com/suez-rules", "snippet": "Администрация Суэцкого канала (SCA) объявила об ужесточении требований безопасности и лоцманской проводки...", "source": "MarineLog"},
         {"title": "Рост цен на фрахт судов: обзор отрасли", "link": "https://example.com/freight-prices", "snippet": "Аналитики прогнозируют дальнейший рост тарифов на контейнерные перевозки из-за дефицита мощностей в Азии.", "source": "ShippingToday"},
@@ -153,7 +141,6 @@ def fetch_maritime_news():
 def create_presentation_pdf(user_id, slides_data):
     filename = f'presentation_{user_id}.pdf'
     
-    # Обновленный CSS для стабильности и красоты
     html_head = f"""
     <html>
     <head>
@@ -186,7 +173,7 @@ def create_presentation_pdf(user_id, slides_data):
                 font-family: 'Playfair Display', serif;
                 font-size: 24px; font-weight: 700; margin-top: 0; margin-bottom: 15px;
                 color: #2e5cb8; /* Акцентный синий */
-                border-bottom: 2px solid #2e5cb8; /* Сделали линию акцентной */
+                border-bottom: 2px solid #2e5cb8; 
                 padding-bottom: 5px;
             }}
             h3.block-title {{
@@ -197,34 +184,40 @@ def create_presentation_pdf(user_id, slides_data):
                 font-size: 13px; line-height: 1.7; text-align: justify; margin: 0 0 15px 0;
             }}
 
-            /* IMAGE AND INTRO BLOCK - ИСПОЛЬЗУЕМ FLEXBOX */
+            /* IMAGE AND INTRO BLOCK - УЛУЧШЕННЫЙ FLEXBOX */
             .top-area {{
                 display: flex; gap: 25px; width: 100%; margin-bottom: 30px;
                 align-items: flex-start;
             }}
-            .image-portrait {{
-                width: 180px; height: 240px; object-fit: cover;
-                border-radius: 4px; box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+            .image-portrait-container {{
+                width: 180px; height: 240px; 
                 flex-shrink: 0;
+                background-color: #eee; 
+                display: flex; align-items: center; justify-content: center;
+                border-radius: 4px; box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+            }}
+            .image-portrait {{
+                width: 100%; height: 100%; object-fit: cover;
+                border-radius: 4px;
             }}
             .intro-text-content {{ flex-grow: 1; }}
 
-            /* INFO BLOCKS LAYOUT - ИСПОЛЬЗУЕМ GRID */
+            /* INFO BLOCKS LAYOUT - GRID */
             .info-blocks-grid {{
                 display: grid;
-                grid-template-columns: 1fr 1fr; /* Two equal columns */
+                grid-template-columns: 1fr 1fr; 
                 gap: 20px;
                 width: 100%;
             }}
             .info-block-item {{
-                background-color: #f4f7f9; /* Светлый фон для блоков */
+                background-color: #f4f7f9; 
                 border: 1px solid #e0e0e0; 
                 padding: 15px;
                 border-radius: 4px;
                 box-shadow: 0 1px 3px rgba(0,0,0,0.05);
             }}
             .info-block-item h3 {{
-                 color: #2e5cb8; /* Акцентный заголовок блока */
+                 color: #2e5cb8; 
             }}
 
             /* FOOTER */
@@ -252,8 +245,8 @@ def create_presentation_pdf(user_id, slides_data):
         # 1. TOP AREA (Image and Intro)
         slide_html += '<div class="top-area">'
         
-        # Image column (always present)
-        slide_html += f'<div>'
+        # Image column: теперь всегда имеет контейнер для сохранения верстки
+        slide_html += '<div class="image-portrait-container">'
         if img_b64:
             slide_html += f'<img src="data:image/jpeg;base64,{img_b64}" class="image-portrait">'
         slide_html += '</div>'
@@ -295,7 +288,6 @@ def create_presentation_pdf(user_id, slides_data):
 
 def get_main_menu_keyboard():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-    # ДОБАВЛЕНИЕ НОВОЙ КНОПКИ:
     keyboard.add(types.KeyboardButton("Создать презентацию 🎨"), 
                  types.KeyboardButton("Maritime News ⚓"),
                  types.KeyboardButton("Ответы на вопросы ❓"), 
@@ -361,8 +353,7 @@ def handle_text_messages(message):
     chat_id = message.chat.id
     session = user_sessions.get(user_id)
 
-    # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ---
-    # Исключаем кнопки главного меню из этого обработчика.
+    # --- ИСКЛЮЧЕНИЕ КНОПОК ГЛАВНОГО МЕНЮ ---
     if message.text in ["Создать презентацию 🎨", "Ответы на вопросы ❓", "Профиль 👤", "Maritime News ⚓"]:
         return
 
