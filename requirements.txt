@@ -1,0 +1,6 @@
+﻿telebot
+pdfkit
+google-generativeai
+requests
+python-dotenv
+Pillow
