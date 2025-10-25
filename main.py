@@ -1,13 +1,12 @@
 """
 Бот для создания AI-презентаций в PDF.
-Версия 36.2 - FINAL FIX for Render/Docker startup.
+Версия 36.3 - FINAL ARCHITECTURE: Webhooks and Flask.
 """
 
 import os
 import re
 import logging
 import sqlite3
-# from dotenv import load_dotenv # <--- ЦЕЙ РЯДОК ВИДАЛЕНО!
 import requests
 import html
 import base64
@@ -15,21 +14,26 @@ import time
 import json
 from datetime import datetime
 
+# Импорты для Webhooks
+from flask import Flask, request 
 import telebot
 from telebot import types
 import pdfkit
 import google.generativeai as genai
 from PIL import Image
 
-# --- 1. ЗАГРУЗКА НАСТРОЕК ---
-# load_dotenv() # <--- ЦЕЙ РЯДОК ВИДАЛЕНО, щоб читати ключі напряму з Render Variables!
+# --- 1. ЗАГРУЗКА НАСТРОЕК (Чтение ключей напрямую из окружения Render) ---
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 PIXABAY_API_KEY = os.getenv('PIXABAY_API_KEY')
 
+# Настройки для Webhooks
+WEBHOOK_HOST = os.getenv('WEBHOOK_HOST') # URL, который предоставит Render
+PORT = int(os.environ.get('PORT', 5000)) # Порт, который предоставит хостинг
+
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 
-# Конфигурация pdfkit (уже исправлено в Dockerfile)
+# Конфигурация pdfkit (теперь работает благодаря Docker/Buildpack)
 try:
     config = pdfkit.configuration() 
 except OSError as e:
@@ -46,7 +50,7 @@ else:
     gemini_model = None
 
 # --- 2. БАЗА ДАННЫХ ---
-DB_NAME = 'bot_stats.db'
+DB_NAME = 'bot_stats.db' # На Docker это будет временная база данных, которая сбрасывается
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False); c = conn.cursor()
     c.execute('CREATE TABLE IF NOT EXISTS user_stats (user_id INTEGER PRIMARY KEY, presentations_count INTEGER DEFAULT 0, questions_count INTEGER DEFAULT 0)')
@@ -96,10 +100,9 @@ def find_image_pixabay(query, user_id, fallback_query=None):
     base_queries = [q for q in [query, fallback_query] if q and q.strip()]
     if not base_queries: base_queries.append("minimalist abstract")
     
-    # --- УЛУЧШЕННЫЕ ЗАПРОСЫ ДЛЯ КРАСИВЫХ ФОТО ---
     artistic_keywords = ["photorealistic", "cinematic lighting", "dramatic", "masterpiece", "professional photography"]
     queries_to_try = [f"{base_queries[0]} {keyword}" for keyword in artistic_keywords]
-    queries_to_try.extend(base_queries) # Добавляем оригинальные запросы в конец
+    queries_to_try.extend(base_queries)
 
     for q in queries_to_try:
         try:
@@ -130,16 +133,12 @@ def create_presentation_pdf(user_id, slides_data):
             padding: 22mm; box-sizing: border-box; 
         }}
         
-        /* --- Элементы типографики --- */
         h1.main-title {{ font-size: 40pt; font-weight: bold; margin: 25mm 0; line-height: 1.2; text-align: center; color: #111; }}
         h2.section-title {{ font-size: 28px; font-weight: bold; margin-top: 0; margin-bottom: 10px; }}
         p.main-text {{ font-size: 14px; line-height: 1.6; text-align: justify; margin: 0; }}
         
         .image-portrait {{ width: 150px; height: 190px; object-fit: cover; border-radius: 4px; }}
-        
         hr.separator {{ border: none; border-top: 1px solid #eee; margin: 25mm 0; }}
-
-        /* --- Секция с колонками --- */
         h2.columns-title {{ font-size: 24px; font-weight: bold; margin-top: 0; margin-bottom: 20px; }}
         
         .info-blocks-table {{ width: 100%; border-collapse: separate; border-spacing: 20px 0; }}
@@ -157,9 +156,7 @@ def create_presentation_pdf(user_id, slides_data):
         img_b64 = image_to_base64(slide.get('image_path'))
         
         slide_html = '<div class="page">'
-        
         slide_html += '<table style="width: 100%; border-collapse: collapse;">'
-        
         slide_html += '<tr>'
         slide_html += f'<td style="width: 170px; padding-right: 30px; vertical-align: top;">'
         if img_b64:
@@ -260,7 +257,6 @@ def handle_text_messages(message):
         session['state'] = 'waiting_slide_count'
         
         keyboard = types.InlineKeyboardMarkup(row_width=3)
-        # ИСПРАВЛЕНИЕ: Увеличенный выбор слайдов
         keyboard.add(types.InlineKeyboardButton("3 слайда", callback_data='slide_count_3'),
                      types.InlineKeyboardButton("5 слайдов", callback_data='slide_count_5'),
                      types.InlineKeyboardButton("7 слайдов", callback_data='slide_count_7'))
