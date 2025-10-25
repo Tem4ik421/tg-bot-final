@@ -5,12 +5,12 @@ FROM python:3.11-alpine
 # Оновлюємо систему та встановлюємо інструменти для завантаження (wget)
 RUN apk update && apk add --no-cache wget
 
-# Завантажуємо та встановлюємо wkhtmltopdf вручну
-# Це надійне посилання на останній робочий бінарник
-RUN wget https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/0.12.6/wkhtmltopdf-0.12.6.2.linux-static-amd64.tar.xz && \
-    tar xvf wkhtmltopdf-0.12.6.2.linux-static-amd64.tar.xz && \
+# Завантажуємо та встановлюємо wkhtmltopdf (інша версія та посилання)
+# Це надійне посилання на v0.12.5 для Alpine
+RUN wget https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/0.12.5/wkhtmltox_0.12.5-1.alpine3.10_amd64.tar.xz && \
+    tar xvf wkhtmltox_0.12.5-1.alpine3.10_amd64.tar.xz && \
     cp wkhtmltox/bin/wkhtmltopdf /usr/bin/wkhtmltopdf && \
-    rm -rf wkhtmltopdf-0.12.6.2.linux-static-amd64.tar.xz wkhtmltox
+    rm -rf wkhtmltox_0.12.5-1.alpine3.10_amd64.tar.xz wkhtmltox
 
 # --- Встановлення Python-залежностей ---
 WORKDIR /app
