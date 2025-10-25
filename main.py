@@ -1,6 +1,6 @@
 """
 Бот для создания AI-презентаций в PDF.
-Версия 37.7 - FINAL FIX: Ultimate Symmetry Fix, Stable Layout, and Feature Complete (Length Fix).
+Версия 37.10 - FINAL FIX: Ultimate API Safety (Added robust content validation to prevent empty PDFs).
 """
 
 import os
@@ -294,7 +294,7 @@ def create_presentation_pdf(user_id, slides_data):
         
         # Text column
         slide_html += '<div class="intro-text-content">'
-        slide_html += f'<h2 class="section-title">{html.escape(slide["title"])}</h2>'
+        slide_html += f'<h2 class="section-section-title">{html.escape(slide["title"])}</h2>'
         slide_html += f'<p class="main-text">{html.escape(slide["intro"])}</p>'
         slide_html += '</div></div>' # Close intro-text-content and top-area
         
@@ -485,9 +485,13 @@ def start_generation_process(user_id, chat_id, slide_count):
     
     temp_files = []
     pdf_file = None
+    
+    # 1. ОТПРАВКА ДИАГНОСТИЧЕСКОГО СООБЩЕНИЯ
+    bot.edit_message_text("⏳ Генерирую контент (1/3). Проверяю ключи API...", chat_id, last_msg_id)
+    
     try:
-        bot.edit_message_text("⏳ Генерирую контент (1/3)...", chat_id, last_msg_id)
         
+        # --- БЛОК ГЕНЕРАЦИИ КОНТЕНТА ---
         prompt = (
             f"Создай контент для презентации в журнальном стиле из {slide_count} слайдов на тему '{session['topic']}'. "
             f"Для КАЖДОГО из {slide_count} слайдов верни JSON-объект с ключами: "
@@ -500,32 +504,54 @@ def start_generation_process(user_id, chat_id, slide_count):
         )
         
         slides_structure = call_gemini(prompt, is_json=True)
-        if not isinstance(slides_structure, list) or not slides_structure:
-            raise ValueError("AI вернул некорректную структуру данных.")
+        
+        # --- ПРОВЕРКА КОРРЕКТНОСТИ КОНТЕНТА ---
+        if not isinstance(slides_structure, list) or not slides_structure or not any(s.get('title') for s in slides_structure):
+            # Если Gemini вернул пустой список или невалидный JSON, выбрасываем явную ошибку
+            raise RuntimeError("AI вернул пустой или некорректный контент. Возможно, API лимит исчерпан.")
         
         save_presentation_topic(user_id, session['topic'])
         slides_data = []
         
+        # --- БЛОК ПОИСКА ИЗОБРАЖЕНИЙ ---
         bot.edit_message_text("✅ Контент готов. Ищу красивые фото (2/3)...", chat_id, last_msg_id)
         
         for i, slide_struct in enumerate(slides_structure):
             image_query = slide_struct.get('image_query')
             image_path = find_image_pixabay(image_query, user_id, fallback_query=session['topic'])
             
+            # Добавим критическую проверку, чтобы убедиться, что файл не пуст
+            if image_path and os.path.getsize(image_path) < 1000:
+                logging.warning(f"Найденное изображение {image_path} слишком мало, вероятно, это ошибка Pixabay.")
+                os.remove(image_path)
+                image_path = None
+
             slide_struct['image_path'] = image_path
             slides_data.append(slide_struct)
             if image_path: temp_files.append(image_path)
 
         bot.edit_message_text("✅ Фото найдены. Собираю PDF (3/3)...", chat_id, last_msg_id)
+        
+        # --- ГЕНЕРАЦИЯ PDF ---
         pdf_file = create_presentation_pdf(user_id, slides_data)
         
+        # --- ОТПРАВКА ---
         with open(pdf_file, 'rb') as doc:
             bot.send_document(chat_id, doc, caption="Ваша презентация готова!")
 
     except Exception as e:
         logging.error(f"Ошибка в процессе генерации: {e}")
-        bot.send_message(chat_id, f"🚫 Произошла критическая ошибка: {e}")
+        # ГЕНЕРАЦИЯ ПОНЯТНОГО СООБЩЕНИЯ ДЛЯ ПОЛЬЗОВАТЕЛЯ
+        error_message = "🚫 Произошла критическая ошибка."
+        if "API" in str(e) or "limit" in str(e) or "429" in str(e):
+             error_message = "🚫 Ошибка лимита/подключения AI. Пожалуйста, подождите 1 час и попробуйте снова."
+        elif "некорректный контент" in str(e) or "JSON" in str(e):
+             error_message = "🚫 Ошибка генерации контента. Попробуйте более простой запрос."
+        
+        bot.send_message(chat_id, error_message)
+
     finally:
+        # УДАЛЕНИЕ ВРЕМЕННЫХ ФАЙЛОВ
         if pdf_file and os.path.exists(pdf_file): os.remove(pdf_file)
         for f in temp_files:
             if f and os.path.exists(f): os.remove(f)
