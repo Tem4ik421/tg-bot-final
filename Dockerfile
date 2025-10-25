@@ -2,6 +2,7 @@
 FROM python:3.11-slim
 
 # --- ВСТАНОВЛЕННЯ СИСТЕМНИХ ЗАЛЕЖНОСТЕЙ ДЛЯ WEASYPRINT ---
+# Виправлено назви та додано всі необхідні dev-пакети.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     python3-dev \

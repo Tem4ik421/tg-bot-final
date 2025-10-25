@@ -109,7 +109,7 @@ def find_image_pixabay(query, user_id, fallback_query=None):
                 img_path = os.path.abspath(f"temp_img_{user_id}_{int(time.time())}.jpg")
                 with open(img_path, 'wb') as f: f.write(img_resp.content)
                 return img_path
-        except Exception as e: logging.warning(f"Ошибка Pixabay для '{q}': {e}") # <--- ИСПРАВЛЕННЫЙ СИНТАКСИС ЗДЕСЬ
+        except Exception as e: logging.warning(f"Ошибка Pixabay для '{q}': {e}") # <--- ЧИСТЫЙ РЯДОК 112
     return None
 
 # --- 4. ГЕНЕРАТОР PDF (ФИНАЛЬНАЯ ВЕРСТКА НА ТАБЛИЦАХ) ---
