@@ -1,15 +1,11 @@
-# Використовуємо чистий, стабільний образ Python
-FROM python:3.11-slim
+# Використовуємо чистий, стабільний образ Alpine
+FROM alpine:latest
 
-# Встановлюємо wkhtmltopdf та всі необхідні системні залежності
-# Це найнадійніша команда для встановлення wkhtmltopdf на Debian/Ubuntu
-RUN apt-get update && apt-get install -y \
-    wkhtmltopdf \
-    libxrender1 \
-    libfontconfig1 \
-    libxtst6 \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Встановлюємо Python, wkhtmltopdf та всі необхідні залежності
+# Цей рядок гарантує, що всі інструменти встановлені коректно
+RUN apk update && \
+    apk add --no-cache python3 py3-pip wkhtmltopdf \
+    && rm -rf /var/cache/apk/*
 
 # Встановлюємо робочу директорію
 WORKDIR /app
