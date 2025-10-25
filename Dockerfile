@@ -2,13 +2,17 @@
 FROM python:3.11-slim
 
 # --- ВСТАНОВЛЕННЯ СИСТЕМНИХ ЗАЛЕЖНОСТЕЙ ДЛЯ WEASYPRINT ---
-# WeasyPrint вимагає libpango, libffi та ін.
+# WeasyPrint вимагає: libpango, libffi та інші.
+# Виправлено назви та додано всі необхідні dev-пакети.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    libpango-1.0-0 \
-    libpangs-ft2-1.0-0 \
-    libharfbuzz0b \
+    python3-dev \
     libffi-dev \
+    libcairo2 \
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    libharfbuzz0b \
+    g++ \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
@@ -16,7 +20,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY requirements.txt .
-# WeasyPrint (або інші потрібні бібліотеки) будуть тут
+# WeasyPrint (та інші потрібні бібліотеки)
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
