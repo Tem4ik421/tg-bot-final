@@ -1,8 +1,8 @@
 # Використовуємо образ Python на базі Debian (slim)
 FROM python:3.11-slim
 
-# --- ВСТАНОВЛЕННЯ WKHTMLTOPDF З .DEB-ПАКЕТА (Найнадійніший метод) ---
-# Оновлюємо та встановлюємо необхідні залежності для wkhtmltopdf
+# --- ВСТАНОВЛЕННЯ WKHTMLTOPDF З GCS (Найнадійніший метод) ---
+# Оновлюємо систему та встановлюємо необхідні залежності та wget
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     wget \
@@ -11,8 +11,9 @@ RUN apt-get update && \
     xfonts-base \
     && rm -rf /var/lib/apt/lists/*
 
-# Завантажуємо офіційний пакет wkhtmltopdf (v0.12.6 для Debian 11/Bullseye, це сумісно з Python 3.11-slim)
-RUN wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6-1.bullseye_amd64.deb && \
+# Завантажуємо .deb-пакет v0.12.6 з Google Cloud Storage (GCS)
+# Це посилання, як правило, не змінюється і повинно спрацювати.
+RUN wget https://storage.googleapis.com/wkhtmltopdf/0.12.6/wkhtmltox_0.12.6-1.bullseye_amd64.deb && \
     dpkg -i wkhtmltox_0.12.6-1.bullseye_amd64.deb && \
     rm wkhtmltox_0.12.6-1.bullseye_amd64.deb
 
