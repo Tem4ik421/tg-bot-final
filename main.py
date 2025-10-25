@@ -1,6 +1,6 @@
 """
 Бот для создания AI-презентаций в PDF.
-Версия 36.4 - FINAL SOLUTION: WeasyPrint.
+Версия 36.5 - FINAL ARCHITECTURE: WeasyPrint (Syntax Fix).
 """
 
 import os
@@ -33,7 +33,7 @@ PORT = int(os.environ.get('PORT', 5000)) # Порт, который предос
 
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 
-# Конфигурация pdfkit (УДАЛЕНО, так как WeasyPrint не требует внешней конфигурации)
+# Конфигурация wkhtmltopdf удалена, так как используется WeasyPrint
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 user_sessions = {}
 
@@ -44,7 +44,7 @@ else:
     gemini_model = None
 
 # --- 2. БАЗА ДАННЫХ ---
-DB_NAME = 'bot_stats.db' # На Docker это будет временная база данных, которая сбрасывается
+DB_NAME = 'bot_stats.db'
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False); c = conn.cursor()
     c.execute('CREATE TABLE IF NOT EXISTS user_stats (user_id INTEGER PRIMARY KEY, presentations_count INTEGER DEFAULT 0, questions_count INTEGER DEFAULT 0)')
@@ -109,12 +109,11 @@ def find_image_pixabay(query, user_id, fallback_query=None):
                 img_path = os.path.abspath(f"temp_img_{user_id}_{int(time.time())}.jpg")
                 with open(img_path, 'wb') as f: f.write(img_resp.content)
                 return img_path
-            except Exception as e: logging.warning(f"Ошибка Pixabay для '{q}': {e}")
+        except Exception as e: logging.warning(f"Ошибка Pixabay для '{q}': {e}") # <--- ИСПРАВЛЕННЫЙ СИНТАКСИС ЗДЕСЬ
     return None
 
 # --- 4. ГЕНЕРАТОР PDF (ФИНАЛЬНАЯ ВЕРСТКА НА ТАБЛИЦАХ) ---
 def create_presentation_pdf(user_id, slides_data):
-    # WeasyPrint не требует предварительной конфигурации!
     filename = f'presentation_{user_id}.pdf'
     html_head = f"""
     <html><head><meta charset="UTF-8"><title>Презентация</title>
@@ -188,12 +187,12 @@ def create_presentation_pdf(user_id, slides_data):
 
     final_html = html_head + slides_html + "</body></html>"
     
-    # --- ЗАМЕНА PDFKIT НА WEASYPRINT ---
+    # --- ИСПОЛЬЗУЕМ WEASYPRINT ---
     HTML(string=final_html).write_pdf(filename)
     
     return filename
 
-# --- 5. ОБРАБОТЧИКИ TELEGRAM ---
+# --- 5. ОБРАБОТЧИКИ TELEGRAM (без изменений) ---
 def get_main_menu_keyboard():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
     keyboard.add(types.KeyboardButton("Создать презентацию 🎨"), types.KeyboardButton("Ответы на вопросы ❓"), types.KeyboardButton("Профиль 👤"))
@@ -333,7 +332,7 @@ def start_generation_process(user_id, chat_id, slide_count):
             
             slide_struct['image_path'] = image_path
             slides_data.append(slide_struct)
-            if image_path: temp_files.append(image_path) # Добавляем фото в список на удаление
+            if image_path: temp_files.append(image_path)
 
         bot.edit_message_text("✅ Фото найдены. Собираю PDF (3/3)...", chat_id, last_msg_id)
         pdf_file = create_presentation_pdf(user_id, slides_data)
@@ -375,13 +374,9 @@ def handle_callbacks(call):
     bot.answer_callback_query(call.id)
     
 
-# --- ЗАПУСК БОТА ---
-# Используйте Flask для запуска в окружении Render
+# --- ЗАПУСК БОТА (Webhooks) ---
 if __name__ == '__main__':
-    # Настройка Webhook URL для Render
     WEBHOOK_URL = f'https://{WEBHOOK_HOST}'
-
-    # Создание Flask-приложения (Убедитесь, что gunicorn установлен в requirements.txt)
     app = Flask(__name__)
 
     @app.route('/' + TOKEN, methods=['POST'])
@@ -397,6 +392,5 @@ if __name__ == '__main__':
         bot.set_webhook(url=WEBHOOK_URL + '/' + TOKEN)
         return "Bot started!", 200
 
-    # Запуск Flask-приложения (будет переопределено Gunicorn при деплое)
-    print(f"Бот запущен на порту {PORT} (v36.4 - WeasyPrint FIX)...")
+    print(f"Бот запущен на порту {PORT} (v36.5 - Syntax Fix)...")
     app.run(host="0.0.0.0", port=PORT)
