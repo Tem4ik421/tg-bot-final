@@ -1,6 +1,6 @@
 """
 Бот для создания AI-презентаций в PDF.
-Версия 36.5 - FINAL ARCHITECTURE: WeasyPrint (Syntax Fix).
+Версия 36.6 - FINAL ARCHITECTURE: WeasyPrint (Webhook Startup Fix).
 """
 
 import os
@@ -18,7 +18,7 @@ from datetime import datetime
 from flask import Flask, request 
 import telebot
 from telebot import types
-from weasyprint import HTML # <--- НОВЫЙ ИМПОРТ
+from weasyprint import HTML 
 import google.generativeai as genai
 from PIL import Image
 
@@ -33,7 +33,6 @@ PORT = int(os.environ.get('PORT', 5000)) # Порт, который предос
 
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 
-# Конфигурация wkhtmltopdf удалена, так как используется WeasyPrint
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 user_sessions = {}
 
@@ -43,7 +42,7 @@ if GEMINI_API_KEY:
 else:
     gemini_model = None
 
-# --- 2. БАЗА ДАННЫХ ---
+# --- 2. БАЗА ДАННЫХ (без изменений) ---
 DB_NAME = 'bot_stats.db'
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False); c = conn.cursor()
@@ -76,7 +75,7 @@ def get_user_profile_data(user_id):
 
 init_db()
 
-# --- 3. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+# --- 3. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (без изменений) ---
 def call_gemini(prompt, is_json=False):
     if not gemini_model: raise ConnectionError("Модель Gemini не инициализирована.")
     mime_type = "application/json" if is_json else "text/plain"
@@ -109,16 +108,16 @@ def find_image_pixabay(query, user_id, fallback_query=None):
                 img_path = os.path.abspath(f"temp_img_{user_id}_{int(time.time())}.jpg")
                 with open(img_path, 'wb') as f: f.write(img_resp.content)
                 return img_path
-        except Exception as e: logging.warning(f"Ошибка Pixabay для '{q}': {e}") # <--- ЧИСТЫЙ РЯДОК 112
+        except Exception as e: logging.warning(f"Ошибка Pixabay для '{q}': {e}")
     return None
 
-# --- 4. ГЕНЕРАТОР PDF (ФИНАЛЬНАЯ ВЕРСТКА НА ТАБЛИЦАХ) ---
+# --- 4. ГЕНЕРАТОР PDF (WeasyPrint) ---
 def create_presentation_pdf(user_id, slides_data):
     filename = f'presentation_{user_id}.pdf'
     html_head = f"""
     <html><head><meta charset="UTF-8"><title>Презентация</title>
     <style>
-        @page {{ size: A4; margin: 0; }} /* WeasyPrint использует @page для A4 */
+        @page {{ size: A4; margin: 0; }}
         body {{ margin: 0; padding: 0; background-color: #fff; font-family: 'Times New Roman', Times, serif; color: #333; }}
         .page {{ 
             width: 210mm; height: 297mm; page-break-after: always; 
@@ -375,22 +374,27 @@ def handle_callbacks(call):
     
 
 # --- ЗАПУСК БОТА (Webhooks) ---
-if __name__ == '__main__':
+# Блок Flask для Gunicorn (Production)
+app = Flask(__name__)
+
+@app.route('/' + TOKEN, methods=['POST'])
+def get_message():
+    json_string = request.get_data().decode('utf-8')
+    update = telebot.types.Update.de_json(json_string)
+    bot.process_new_updates([update])
+    return "!", 200
+
+@app.route('/')
+def webhook():
+    # Встановлює Webhook при першому запуску
     WEBHOOK_URL = f'https://{WEBHOOK_HOST}'
-    app = Flask(__name__)
+    bot.remove_webhook()
+    bot.set_webhook(url=WEBHOOK_URL + '/' + TOKEN)
+    logging.info("Webhook set successfully.")
+    return "Bot started!", 200
 
-    @app.route('/' + TOKEN, methods=['POST'])
-    def get_message():
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return "!", 200
-
-    @app.route('/')
-    def webhook():
-        bot.remove_webhook()
-        bot.set_webhook(url=WEBHOOK_URL + '/' + TOKEN)
-        return "Bot started!", 200
-
-    print(f"Бот запущен на порту {PORT} (v36.5 - Syntax Fix)...")
+# Блок запуску для локального тестування (якщо запускається python main.py)
+if __name__ == '__main__':
+    logging.info(f"Running locally on port {PORT}...")
+    # Це потрібно тільки для локального запуску, Gunicorn використовує змінну PORT
     app.run(host="0.0.0.0", port=PORT)
