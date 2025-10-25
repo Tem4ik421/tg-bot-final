@@ -1,21 +1,19 @@
-# Використовуємо чистий образ Python для Alpine
-FROM python:3.11-alpine
+# Використовуємо образ Python на базі Debian (slim) - це набагато стабільніше для wkhtmltopdf
+FROM python:3.11-slim
 
-# --- ВСТАНОВЛЕННЯ WKHTMLTOPDF (v0.12.6) ---
-# Оновлюємо систему та встановлюємо інструменти для завантаження (wget)
-# Також встановлюємо libstdc++, необхідний для запуску wkhtmltopdf
-RUN apk update && apk add --no-cache wget libstdc++
-
-# Завантажуємо нову версію wkhtmltopdf (v0.12.6 для Alpine 3.12)
-RUN wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6-1.alpine312_amd64.tar.xz && \
-    tar xvf wkhtmltox_0.12.6-1.alpine312_amd64.tar.xz && \
-    cp wkhtmltox/bin/wkhtmltopdf /usr/bin/wkhtmltopdf && \
-    rm -rf wkhtmltox_0.12.6-1.alpine312_amd64.tar.xz wkhtmltox
+# --- ВСТАНОВЛЕННЯ WKHTMLTOPDF З APT ---
+# Оновлюємо систему та встановлюємо wkhtmltopdf і необхідні залежності/шрифти
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    wkhtmltopdf \
+    xfonts-base \
+    && rm -rf /var/lib/apt/lists/*
 
 # --- Встановлення Python-залежностей ---
 WORKDIR /app
 
 COPY requirements.txt .
+# Встановлення залежностей Python
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
