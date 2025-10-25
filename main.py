@@ -1,6 +1,6 @@
 """
 Бот для создания AI-презентаций в PDF.
-Версия 37.5 - FINAL: Applied stable layout, ultimate design polish, and feature complete Maritime News.
+Версия 37.6 - FINAL: Ultimate Design Polish, Stable Layout, and Feature Complete.
 """
 
 import os
