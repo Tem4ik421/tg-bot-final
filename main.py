@@ -10,7 +10,7 @@ from fpdf import FPDF
 import feedparser
 import google.generativeai as genai
 
-# ======== Переменные окружения ========
+# ======== Ключи и переменные окружения ========
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")  # пример: https://tg-bot-final-1.onrender.com
@@ -35,7 +35,7 @@ def main_menu():
     markup.row("🎨 Создать презентацию", "❓ Ответы на вопросы")
     return markup
 
-# ======== Команда /start ========
+# ======== /start ========
 @bot.message_handler(commands=["start"])
 def start(message):
     chat_id = message.chat.id
@@ -78,8 +78,8 @@ def generate_photo(message):
     bot.send_message(chat_id, "🔄 Генерирую фото через Gemini 2.0 Flash... 🪄")
     try:
         model = genai.GenerativeModel(MODEL_IMAGE)
-        result = model.generate_content([prompt], generation_config={"response_mime_type": "image/png"})
-        image_data = result._result.candidates[0].content.parts[0].inline_data.data
+        result = model.generate_images(prompt)
+        image_data = result.images[0]._image_bytes
         file_path = f"photo_{chat_id}.png"
         with open(file_path, "wb") as f:
             f.write(image_data)
@@ -95,7 +95,7 @@ def create_presentation(message):
     bot.send_message(chat_id, "🎨 Создаю журнальную презентацию через Gemini 2.0 Pro...")
     try:
         model = genai.GenerativeModel(MODEL_TEXT)
-        prompt = "Создай краткий текст для журнальной презентации в морском стиле."
+        prompt = "Создай красивый текст для журнальной презентации о морском путешествии."
         result = model.generate_content(prompt)
         text = result.text
         pdf = FPDF()
@@ -140,7 +140,7 @@ def answer_question(message):
     except Exception as e:
         bot.send_message(chat_id, f"❌ Ошибка при генерации: {e}", reply_markup=main_menu())
 
-# ======== Flask endpoints ========
+# ======== Flask сервер ========
 @app.route("/", methods=["GET"])
 def index():
     return "🤖 Telegram бот запущен и активен на Render!", 200
@@ -169,4 +169,3 @@ if __name__ == "__main__":
     bot.set_webhook(url=WEBHOOK_URL)
     print(f"✅ Вебхук установлен: {WEBHOOK_URL}")
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
-
