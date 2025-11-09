@@ -11,18 +11,13 @@ from fpdf import FPDF
 import feedparser
 import google.generativeai as genai
 
-# ==========================
-# 🔐 Настройки API
-# ==========================
+# ======== 🔐 Ключи и модели ========
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST") or "https://tg-bot-final-1.onrender.com"
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# ==========================
-# 💡 Модели
-# ==========================
 MODEL_TEXT = "models/gemini-2.5-pro"
 MODEL_IMAGE = "imagen-4.0"
 
@@ -31,9 +26,7 @@ bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 app = Flask(__name__)
 user_history = {}
 
-# ==========================
-# 💤 Антифриз Render
-# ==========================
+# ======== 💤 Антифриз (Render ping) ========
 def keep_alive():
     while True:
         try:
@@ -45,9 +38,7 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# ==========================
-# 📱 Главное меню
-# ==========================
+# ======== Главное меню ========
 def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row("👤 Профиль")
@@ -55,18 +46,14 @@ def main_menu():
     markup.row("🎨 Создать презентацию", "❓ Ответы на вопросы")
     return markup
 
-# ==========================
-# /start
-# ==========================
+# ======== /start ========
 @bot.message_handler(commands=["start"])
 def start(message):
     chat_id = message.chat.id
     user_history.setdefault(chat_id, {"questions": [], "media": [], "presentations": [], "news": []})
     bot.send_message(chat_id, f"Привет, {message.from_user.first_name}! 👋\nВыбери опцию:", reply_markup=main_menu())
 
-# ==========================
-# 👤 Профиль
-# ==========================
+# ======== 👤 Профиль ========
 @bot.message_handler(func=lambda m: m.text == "👤 Профиль")
 def profile(message):
     chat_id = message.chat.id
@@ -83,9 +70,7 @@ def profile(message):
     )
     bot.send_message(chat_id, text, reply_markup=main_menu())
 
-# ==========================
-# 🖼️ Генератор медиа
-# ==========================
+# ======== 🖼️ Генератор медиа ========
 @bot.message_handler(func=lambda m: m.text == "🖼️ Генератор Медиа")
 def media_menu(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -104,28 +89,33 @@ def generate_image(message):
     loading = bot.send_message(chat_id, "🔄 Генерирую фото через Imagen 4.0... 🪄")
 
     try:
-        response = genai.Image.generate(model=MODEL_IMAGE, prompt=prompt)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_IMAGE}:predict?key={GEMINI_API_KEY}"
+        payload = {"prompt": prompt}
+        headers = {"Content-Type": "application/json"}
 
-        if not response.images:
-            raise ValueError("Не удалось получить изображение от Imagen")
+        response = requests.post(url, json=payload, headers=headers)
+        data = response.json()
 
-        image_bytes = response.images[0].data
+        if "predictions" not in data or not data["predictions"]:
+            raise ValueError(f"Ответ Imagen пустой: {data}")
+
+        image_base64 = data["predictions"][0]["bytesBase64Encoded"]
+        image_bytes = base64.b64decode(image_base64)
         filename = f"generated_{chat_id}.png"
+
         with open(filename, "wb") as f:
             f.write(image_bytes)
 
         bot.delete_message(chat_id, loading.message_id)
         bot.send_photo(chat_id, open(filename, "rb"))
         user_history[chat_id]["media"].append(prompt)
-        print(f"📸 Изображение сгенерировано для {chat_id}: {prompt}")
+        print(f"📸 Изображение сгенерировано через Imagen 4.0 для {chat_id}: {prompt}")
 
     except Exception as e:
         bot.delete_message(chat_id, loading.message_id)
         bot.send_message(chat_id, f"❌ Ошибка при генерации изображения: {e}")
 
-# ==========================
-# ⚓ Морские новости
-# ==========================
+# ======== ⚓ Морские новости ========
 @bot.message_handler(func=lambda m: m.text == "⚓ Морские новости")
 def maritime_news(message):
     chat_id = message.chat.id
@@ -135,9 +125,7 @@ def maritime_news(message):
         bot.send_message(chat_id, f"<b>{e.title}</b>\n{e.link}")
     user_history[chat_id]["news"].append(datetime.now())
 
-# ==========================
-# 🎨 Презентации
-# ==========================
+# ======== 🎨 Презентации ========
 @bot.message_handler(func=lambda m: m.text == "🎨 Создать презентацию")
 def create_presentation(message):
     chat_id = message.chat.id
@@ -162,9 +150,7 @@ def create_presentation(message):
     except Exception as e:
         bot.send_message(chat_id, f"⚠️ Ошибка при создании презентации: {e}")
 
-# ==========================
-# ❓ Ответы на вопросы
-# ==========================
+# ======== ❓ Вопросы ========
 @bot.message_handler(func=lambda m: m.text == "❓ Ответы на вопросы")
 def ask_question(message):
     msg = bot.send_message(message.chat.id, "💬 Задай вопрос — я отвечу через Gemini 2.5 Pro:")
@@ -183,9 +169,7 @@ def answer_question(message):
     except Exception as e:
         bot.send_message(chat_id, f"⚠️ Ошибка при ответе: {e}")
 
-# ==========================
-# 🌍 Flask сервер
-# ==========================
+# ======== 🌍 Flask сервер ========
 @app.route("/", methods=["GET"])
 def index():
     return "🤖 Бот работает на Render!", 200
@@ -196,9 +180,7 @@ def webhook():
     bot.process_new_updates([update])
     return "ok", 200
 
-# ==========================
-# 🚀 Запуск
-# ==========================
+# ======== 🚀 Запуск ========
 if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url=WEBHOOK_URL)
