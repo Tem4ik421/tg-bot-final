@@ -2,6 +2,7 @@ import os
 import time
 import threading
 import base64
+import requests
 from flask import Flask, request
 import telebot
 from telebot import types
@@ -23,7 +24,7 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 # 💡 Модели
 # ==========================
 MODEL_TEXT = "models/gemini-2.5-pro"
-MODEL_IMAGE = "models/imagen-4.0-generate-001"
+MODEL_IMAGE = "imagen-4.0"
 
 genai.configure(api_key=GEMINI_API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
@@ -31,10 +32,9 @@ app = Flask(__name__)
 user_history = {}
 
 # ==========================
-# 🔄 Антифриз Render
+# 💤 Антифриз Render
 # ==========================
 def keep_alive():
-    import requests
     while True:
         try:
             requests.get(WEBHOOK_HOST)
@@ -84,7 +84,7 @@ def profile(message):
     bot.send_message(chat_id, text, reply_markup=main_menu())
 
 # ==========================
-# 🖼️ Генератор Медиа
+# 🖼️ Генератор медиа
 # ==========================
 @bot.message_handler(func=lambda m: m.text == "🖼️ Генератор Медиа")
 def media_menu(message):
@@ -101,23 +101,26 @@ def ask_image_prompt(message):
 def generate_image(message):
     chat_id = message.chat.id
     prompt = message.text
-    bot.send_message(chat_id, "🔄 Генерирую фото через Imagen 4.0... 🪄")
+    loading = bot.send_message(chat_id, "🔄 Генерирую фото через Imagen 4.0... 🪄")
 
     try:
-        model = genai.GenerativeModel(MODEL_IMAGE)
-        result = model.predict({"prompt": prompt})
-        if "images" not in result or not result["images"]:
-            raise ValueError("Не получено изображение")
+        response = genai.Image.generate(model=MODEL_IMAGE, prompt=prompt)
 
-        image_base64 = result["images"][0]["image_base64"]
-        image_bytes = base64.b64decode(image_base64)
+        if not response.images:
+            raise ValueError("Не удалось получить изображение от Imagen")
+
+        image_bytes = response.images[0].data
         filename = f"generated_{chat_id}.png"
         with open(filename, "wb") as f:
             f.write(image_bytes)
 
+        bot.delete_message(chat_id, loading.message_id)
         bot.send_photo(chat_id, open(filename, "rb"))
         user_history[chat_id]["media"].append(prompt)
+        print(f"📸 Изображение сгенерировано для {chat_id}: {prompt}")
+
     except Exception as e:
+        bot.delete_message(chat_id, loading.message_id)
         bot.send_message(chat_id, f"❌ Ошибка при генерации изображения: {e}")
 
 # ==========================
@@ -154,6 +157,8 @@ def create_presentation(message):
         pdf.output(filename)
         bot.send_document(chat_id, open(filename, "rb"))
         user_history[chat_id]["presentations"].append(filename)
+        print(f"📘 PDF готов для {chat_id}")
+
     except Exception as e:
         bot.send_message(chat_id, f"⚠️ Ошибка при создании презентации: {e}")
 
