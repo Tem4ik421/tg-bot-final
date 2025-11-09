@@ -21,10 +21,15 @@ app = Flask(__name__)
 
 # ======== Настройка Gemini ========
 genai.configure(api_key=GEMINI_API_KEY)
-model_text = genai.GenerativeModel("gemini-1.5-flash")
-model_image = genai.GenerativeModel("gemini-1.5-pro")
 
-# ======== Хранилище действий ========
+# используем новую модель Gemini 2.5 Pro
+MODEL_TEXT = "gemini-2.5-pro-latest"
+MODEL_IMAGE = "gemini-2.5-pro-latest"
+
+model_text = genai.GenerativeModel(MODEL_TEXT)
+model_image = genai.GenerativeModel(MODEL_IMAGE)
+
+# ======== Хранилище ========
 user_history = {}
 
 # ======== Главное меню ========
@@ -71,9 +76,10 @@ def media_menu(message):
 def generate_media(message):
     chat_id = message.chat.id
     kind = "фото" if "Фото" in message.text else "видео"
-    bot.send_message(chat_id, f"🔄 Генерирую {kind} через Gemini... 🪄")
+    bot.send_message(chat_id, f"🔄 Генерирую {kind} через Gemini 2.5 Pro... 🪄")
     try:
-        response = model_image.generate_content(f"Generate a realistic {kind} about the sea and ships.")
+        prompt = f"Generate a realistic {kind} about the sea, ships, and marine technology, cinematic style."
+        response = model_image.generate_content(prompt)
         image_data = base64.b64decode(response.candidates[0].content.parts[0].inline_data.data)
         filename = f"media_{chat_id}.jpg"
         with open(filename, "wb") as f:
@@ -87,7 +93,7 @@ def generate_media(message):
 @bot.message_handler(func=lambda m: m.text == "🎨 Создать презентацию")
 def create_presentation(message):
     chat_id = message.chat.id
-    bot.send_message(chat_id, "🎨 Создаю журнальную презентацию через Gemini...")
+    bot.send_message(chat_id, "🎨 Создаю журнальную презентацию через Gemini 2.5 Pro...")
     try:
         response = model_text.generate_content("Создай короткую журнальную статью о технологиях моря и навигации.")
         text = response.text.strip()
@@ -117,7 +123,7 @@ def maritime_news(message):
 # ======== Ответы на вопросы ========
 @bot.message_handler(func=lambda m: m.text == "❓ Ответы на вопросы")
 def question_start(message):
-    bot.send_message(message.chat.id, "💬 Задай вопрос, и я отвечу через Gemini!")
+    bot.send_message(message.chat.id, "💬 Задай вопрос, и я отвечу через Gemini 2.5 Pro!")
 
 @bot.message_handler(func=lambda m: m.text not in ["⬅️ Назад в меню"])
 def answer_question(message):
@@ -129,10 +135,10 @@ def answer_question(message):
     except Exception as e:
         bot.send_message(chat_id, f"Ошибка при обращении к Gemini: {e}")
 
-# ======== Flask веб-сервер ========
+# ======== Flask ========
 @app.route("/", methods=["GET"])
 def index():
-    return "🤖 Бот работает на Render!", 200
+    return "🤖 Бот работает на Render (Gemini 2.5 Pro)", 200
 
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
@@ -141,10 +147,7 @@ def webhook():
     bot.process_new_updates([update])
     return "ok", 200
 
-# ======== Запуск ========
 if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url=WEBHOOK_URL)
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
-
-
