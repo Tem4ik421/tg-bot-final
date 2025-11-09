@@ -16,7 +16,7 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 # ======== Настройка Gemini ========
 genai.configure(api_key=GEMINI_API_KEY)
-MODEL_TEXT = "gemini-2.5-pro"   # исправлено на стабильную версию
+MODEL_TEXT = "gemini-2.5-pro"
 MODEL_IMAGE = "gemini-2.5-pro"
 
 # ======== Flask и бот ========
@@ -24,6 +24,7 @@ bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 app = Flask(__name__)
 
 user_history = {}
+user_state = {}  # для отслеживания состояния (например, ожидаем описание для фото)
 
 # ======== Главное меню ========
 def main_menu():
@@ -69,19 +70,31 @@ def media_menu(message):
     markup.row("⬅️ Назад в меню")
     bot.send_message(message.chat.id, "Выберите тип медиа:", reply_markup=markup)
 
+
 @bot.message_handler(func=lambda m: m.text in ["📸 Фото", "🎬 Видео"])
+def ask_media_description(message):
+    chat_id = message.chat.id
+    user_state[chat_id] = message.text
+    bot.send_message(chat_id, "✏️ Введите описание (например: «кот в скафандре на Марсе, реалистично»)")
+
+
+@bot.message_handler(func=lambda m: m.chat.id in user_state)
 def generate_media(message):
     chat_id = message.chat.id
-    kind = "фото" if "Фото" in message.text else "видео"
+    kind = "фото" if "Фото" in user_state[chat_id] else "видео"
+    prompt = message.text.strip()
+
     bot.send_message(chat_id, f"🔄 Генерирую {kind} через Gemini 2.5 Pro... 🪄")
 
     try:
         model = genai.GenerativeModel(MODEL_IMAGE)
-        result = model.generate_content(f"Создай {kind} по описанию: красивое морское побережье, реалистично")
-        user_history[chat_id]["media"].append(kind)
-        bot.send_message(chat_id, "✅ Медиа успешно сгенерировано!", reply_markup=main_menu())
+        result = model.generate_content(prompt)
+        user_history[chat_id]["media"].append(prompt)
+        bot.send_message(chat_id, f"✅ {kind.capitalize()} создано!\nОписание: {prompt}", reply_markup=main_menu())
     except Exception as e:
         bot.send_message(chat_id, f"❌ Ошибка при генерации: {e}", reply_markup=main_menu())
+    finally:
+        del user_state[chat_id]
 
 
 # ======== Создание презентации ========
@@ -128,6 +141,7 @@ def maritime_news(message):
 def question_start(message):
     bot.send_message(message.chat.id, "💬 Задай любой вопрос, и я постараюсь ответить! 🌟")
 
+
 @bot.message_handler(func=lambda m: m.text not in ["⬅️ Назад в меню"])
 def answer_question(message):
     chat_id = message.chat.id
@@ -147,6 +161,7 @@ def answer_question(message):
 @app.route("/", methods=["GET"])
 def index():
     return "🤖 Telegram бот запущен на Render!", 200
+
 
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
