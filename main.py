@@ -1,6 +1,7 @@
 import os
 import time
 import threading
+import base64
 from flask import Flask, request
 import telebot
 from telebot import types
@@ -10,50 +11,27 @@ import feedparser
 import google.generativeai as genai
 
 # ==========================
-# 🔐 Настройки API-ключей
+# 🔐 Настройки API
 # ==========================
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")  # пример: https://tg-bot-final-1.onrender.com
+WEBHOOK_HOST = os.getenv("WEBHOOK_HOST") or "https://tg-bot-final-1.onrender.com"
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 # ==========================
-# 🤖 Модели
+# 💡 Модели
 # ==========================
 MODEL_TEXT = "models/gemini-2.5-pro"
 MODEL_IMAGE = "models/imagen-4.0-generate-001"
 
-# ==========================
-# 🌐 Инициализация
-# ==========================
 genai.configure(api_key=GEMINI_API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 app = Flask(__name__)
-
 user_history = {}
 
 # ==========================
-# ⚙️ Главное меню
-# ==========================
-def main_menu():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row("👤 Профиль")
-    markup.row("🖼️ Генератор Медиа", "⚓ Морские новости")
-    markup.row("🎨 Создать презентацию", "❓ Ответы на вопросы")
-    return markup
-
-# ==========================
-# 🚀 Анимация загрузки
-# ==========================
-def animated_loading(chat_id, text="⏳ Обработка"):
-    dots = ["", ".", "..", "..."]
-    for i in range(3):
-        bot.edit_message_text(f"{text}{dots[i]}", chat_id, bot.send_message(chat_id, text).message_id)
-        time.sleep(1)
-
-# ==========================
-# 🔄 Поддержка Render (анти-фриз)
+# 🔄 Антифриз Render
 # ==========================
 def keep_alive():
     import requests
@@ -63,9 +41,19 @@ def keep_alive():
             print("💤 Ping → Render OK")
         except Exception as e:
             print("⚠️ Ping Error:", e)
-        time.sleep(600)  # каждые 10 минут
+        time.sleep(600)
 
 threading.Thread(target=keep_alive, daemon=True).start()
+
+# ==========================
+# 📱 Главное меню
+# ==========================
+def main_menu():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row("👤 Профиль")
+    markup.row("🖼️ Генератор Медиа", "⚓ Морские новости")
+    markup.row("🎨 Создать презентацию", "❓ Ответы на вопросы")
+    return markup
 
 # ==========================
 # /start
@@ -83,16 +71,17 @@ def start(message):
 def profile(message):
     chat_id = message.chat.id
     hist = user_history.get(chat_id, {})
-    bot.send_message(chat_id,
+    text = (
         f"<b>Твой профиль</b>\n"
         f"🆔 ID: <code>{chat_id}</code>\n"
         f"👤 Username: @{message.from_user.username}\n"
-        f"📅 Дата: {datetime.now().strftime('%Y-%m-%d')}\n\n"
+        f"📅 {datetime.now().strftime('%Y-%m-%d')}\n\n"
         f"📊 Вопросов: {len(hist['questions'])}\n"
         f"🖼️ Медиа: {len(hist['media'])}\n"
         f"📘 Презентаций: {len(hist['presentations'])}\n"
         f"⚓ Новостей: {len(hist['news'])}"
     )
+    bot.send_message(chat_id, text, reply_markup=main_menu())
 
 # ==========================
 # 🖼️ Генератор Медиа
@@ -116,14 +105,20 @@ def generate_image(message):
 
     try:
         model = genai.GenerativeModel(MODEL_IMAGE)
-        response = model.generate_content(prompt)
-        image_data = response._result.candidates[0].content.parts[0].inline_data.data
-        with open(f"generated_{chat_id}.png", "wb") as f:
-            f.write(image_data)
-        bot.send_photo(chat_id, open(f"generated_{chat_id}.png", "rb"))
+        result = model.predict({"prompt": prompt})
+        if "images" not in result or not result["images"]:
+            raise ValueError("Не получено изображение")
+
+        image_base64 = result["images"][0]["image_base64"]
+        image_bytes = base64.b64decode(image_base64)
+        filename = f"generated_{chat_id}.png"
+        with open(filename, "wb") as f:
+            f.write(image_bytes)
+
+        bot.send_photo(chat_id, open(filename, "rb"))
         user_history[chat_id]["media"].append(prompt)
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Ошибка при генерации: {e}")
+        bot.send_message(chat_id, f"❌ Ошибка при генерации изображения: {e}")
 
 # ==========================
 # ⚓ Морские новости
@@ -138,7 +133,7 @@ def maritime_news(message):
     user_history[chat_id]["news"].append(datetime.now())
 
 # ==========================
-# 🎨 Презентация
+# 🎨 Презентации
 # ==========================
 @bot.message_handler(func=lambda m: m.text == "🎨 Создать презентацию")
 def create_presentation(message):
@@ -147,7 +142,7 @@ def create_presentation(message):
 
     try:
         model = genai.GenerativeModel(MODEL_TEXT)
-        prompt = "Создай презентацию в журнальном стиле о технологиях будущего (5 коротких разделов)."
+        prompt = "Создай презентацию в журнальном стиле о технологиях будущего, с 5 короткими разделами."
         result = model.generate_content(prompt)
         text = result.text or "Ошибка генерации текста."
 
@@ -157,7 +152,6 @@ def create_presentation(message):
         pdf.multi_cell(0, 10, "📰 Презентация Gemini 2.5 Pro\n\n" + text)
         filename = f"presentation_{chat_id}.pdf"
         pdf.output(filename)
-
         bot.send_document(chat_id, open(filename, "rb"))
         user_history[chat_id]["presentations"].append(filename)
     except Exception as e:
@@ -167,8 +161,8 @@ def create_presentation(message):
 # ❓ Ответы на вопросы
 # ==========================
 @bot.message_handler(func=lambda m: m.text == "❓ Ответы на вопросы")
-def question_start(message):
-    msg = bot.send_message(message.chat.id, "💬 Задай вопрос (я отвечу через Gemini 2.5 Pro):")
+def ask_question(message):
+    msg = bot.send_message(message.chat.id, "💬 Задай вопрос — я отвечу через Gemini 2.5 Pro:")
     bot.register_next_step_handler(msg, answer_question)
 
 def answer_question(message):
