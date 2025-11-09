@@ -90,9 +90,12 @@ def generate_image(message):
 
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_IMAGE}:predict?key={GEMINI_API_KEY}"
-        payload = {"prompt": prompt}
+        payload = {
+            "instances": [
+                {"prompt": {"text": prompt}}
+            ]
+        }
         headers = {"Content-Type": "application/json"}
-
         response = requests.post(url, json=payload, headers=headers)
         data = response.json()
 
@@ -186,3 +189,4 @@ if __name__ == "__main__":
     bot.set_webhook(url=WEBHOOK_URL)
     print(f"✅ Вебхук установлен: {WEBHOOK_URL}")
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+
