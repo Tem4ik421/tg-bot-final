@@ -22,7 +22,7 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 # Модели (ИСПРАВЛЕНО)
 MODEL_TEXT = "models/gemini-2.5-pro"
-MODEL_IMAGE = "models/imagen-4.0-fast-generate-001"
+MODEL_IMAGE = "models/imagen-3-fast" # Возвращаем рабочую модель
 
 genai.configure(api_key=GEMINI_API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
@@ -200,7 +200,7 @@ def generate_image(message):
 
     try:
         # Генерируем байты изображения
-        image_bytes = generate_image_bytes(prompt) # Используем ИСПРАВЛЕННУЮ функцию
+        image_bytes = generate_image_bytes(prompt) 
 
         if not image_bytes:
             raise ValueError("Не удалось сгенерировать изображение (пустой ответ от API).")
@@ -219,7 +219,7 @@ def generate_image(message):
     bot.send_message(chat_id, "Что делаем дальше?", reply_markup=main_menu())
 
 # -------------------------------------------------------------------
-# ✅ ИСПРАВЛЕННАЯ ФУНКЦИЯ (твоя версия)
+# ✅ ИСПРАВЛЕННАЯ ФУНКЦИЯ
 # -------------------------------------------------------------------
 def generate_image_bytes(prompt: str) -> bytes | None:
     """Генерация изображения через Imagen (официальный endpoint v1)."""
@@ -230,11 +230,10 @@ def generate_image_bytes(prompt: str) -> bytes | None:
             "instances": [
                 {
                     "prompt": {"text": prompt},
-                    # Добавляем параметры, как ты предложил
                     "parameters": {
                         "sampleCount": 1,
                         "aspectRatio": "1:1",
-                        "safetyFilterLevel": "block_none" # Осторожно: это отключает фильтры
+                        "safetyFilterLevel": "block_none" 
                     }
                 }
             ]
@@ -244,7 +243,7 @@ def generate_image_bytes(prompt: str) -> bytes | None:
         data = response.json()
 
         if "predictions" not in data or not data["predictions"]:
-            print(f"Ошибка Imagen API: {data}") # Выведет ошибку 404, если модель не найдена
+            print(f"Ошибка Imagen API: {data}") 
             return None
 
         image_base64 = data["predictions"][0]["bytesBase64Encoded"]
@@ -354,7 +353,7 @@ def generate_presentation(message):
 
         images = []
         for img_prompt, _, _ in slides_content:
-            img_bytes = generate_image_bytes(img_prompt.strip()) # Используем ИСПРАВЛЕННУЮ функцию
+            img_bytes = generate_image_bytes(img_prompt.strip())
             if img_bytes:
                 images.append(BytesIO(img_bytes))
             else:
@@ -436,7 +435,6 @@ def generate_presentation(message):
 @bot.message_handler(func=lambda m: m.text == "❓ Ответы на вопросы")
 def ask_question(message):
     msg_text = (
-        # Текст ИСПРАВЛЕН
         "💬 Задай любой вопрос — я отвечу через Gemini 2.5 Pro.\n\n"
         "<i>Например: «расскажи про будущее AI» или «что такое МАРПОЛ?»</i>"
     )
@@ -494,7 +492,7 @@ def generate_image_helper(chat_id, prompt):
         )
         img_prompt = img_prompt_gen.text.strip()
 
-        image_bytes = generate_image_bytes(img_prompt) # Используем ИСПРАВЛЕННУЮ функцию
+        image_bytes = generate_image_bytes(img_prompt)
         if image_bytes:
             bot.send_photo(chat_id, image_bytes)
     except Exception as e:
