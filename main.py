@@ -3,9 +3,11 @@ import os
 import time
 import threading
 import requests
+import json  # Добавил для безопасности в webhook
 from flask import Flask, request
 import telebot
 from telebot import types
+from datetime import datetime
 from fpdf import FPDF
 from io import BytesIO
 from groq import Groq
@@ -18,11 +20,8 @@ WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# GROQ — РАБОЧАЯ ИНИЦИАЛИЗАЦИЯ (groq>=0.11.0)
-groq_client = Groq(
-    api_key=GROQ_API_KEY,
-    http_client_kwargs={"proxies": None}  # Отключаем прокси — 100% фикс
-)
+# GROQ — ПРОСТАЯ ИНИЦИАЛИЗАЦИЯ (работает в 0.11.0+ без proxies)
+groq_client = Groq(api_key=GROQ_API_KEY)
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 app = Flask(__name__)
@@ -40,11 +39,11 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# ======== АНІМАЦІЯ ЗАВАНТАЖЕННЯ ========
+# ======== АНІМАЦІЯ ========
 def start_loading(cid, text="Генерую"):
-    msg = bot.send_message(cid, f"{text} [Ship]")
+    msg = bot.send_message(cid, f"{text} ⛵")
     loading[cid] = msg.message_id
-    anim = ["[Ship]", "[Anchor]", "[Wave]", "[Swirl]", "[Tornado]", "[Ship]", "[Sunset]", "[Cruise]"]
+    anim = ["⛵", "⚓", "🌊", "🌀", "🌪", "🚢", "🌅", "🛳"]
     def animate():
         for _ in range(60):
             for e in anim:
@@ -71,7 +70,7 @@ def main_menu():
     k.row("Створити презентацію", "Відповіді на питання")
     return k
 
-# ======== /start ========
+# ======== /start — ТВОЄ ПОВІДОМЛЕННЯ ========
 @bot.message_handler(commands=["start"])
 def start(m):
     cid = m.chat.id
@@ -88,10 +87,10 @@ def start(m):
         f"<b>Капитан @Tem4ik4751 на мостике!</b>\n"
         f"ID: <code>{uid}</code>\n"
         "Бот работает 24/7 — <b>Слава ЗСУ!</b>\n\n"
-        "Выбери функцию [Down Arrow]",
+        "Выбери функцию ⬇️",
         reply_markup=main_menu())
 
-# ======== ПРОФІЛЬ + ІСТОРІЯ ========
+# ======== ПРОФІЛЬ ========
 @bot.message_handler(func=lambda m: m.text == "Профиль")
 def profile(m):
     cid = m.chat.id
@@ -111,7 +110,7 @@ ID: <code>1474031301</code>
 Username: <b>@Artem1488962</b>
 Дата: <b>2025-11-09</b>
 <b>Статистика:</b>
-[Question] Питань: {len(u['questions'])}
+❓ Питань: {len(u['questions'])}
 Фото: {len(u['media'])}
 Відео: {len(u['video'])}
 Презентацій: {len(u['pres'])}
@@ -134,13 +133,14 @@ def history(c):
         text += f"{i}. <code>{x[:50]}{'...' if len(x)>50 else ''}</code>\n"
     bot.send_message(cid, text)
 
-# ======== ГЕНЕРАТОР МЕДІА ========
+# ======== ГЕНЕРАТОР МЕДІА — HTTP KLING API ========
 @bot.message_handler(func=lambda m: m.text == "Генератор Медіа")
 def media_menu(m):
+    bot.send_message(m.chat.id, "Выбирай оружие, капитан!")
     k = types.ReplyKeyboardMarkup(resize_keyboard=True)
     k.row("Фото", "Відео")
     k.row("Назад")
-    bot.send_message(m.chat.id, "Выбирай оружие, капитан!", reply_markup=k)
+    bot.send_message(m.chat.id, reply_markup=k)
 
 @bot.message_handler(func=lambda m: m.text in ["Фото", "Відео"])
 def ask_prompt(m):
@@ -165,10 +165,10 @@ def generate_photo(m):
         ).json()
         img_url = r["data"][0]["url"]
         stop_loading(cid, load.message_id)
-        bot.send_photo(cid, img_url, caption=f"[Camera] {prompt}")
+        bot.send_photo(cid, img_url, caption=f"📸 {prompt}")
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Помилка генерації. Спробуй ще раз.")
+        bot.send_message(cid, f"GROQ перегружен\nПопробуй через 20 сек")
 
 def generate_video(m):
     cid = m.chat.id
@@ -194,15 +194,15 @@ def generate_video(m):
             if status["data"]["status"] == "completed":
                 video_url = status["data"]["video_url"]
                 stop_loading(cid, load.message_id)
-                bot.send_video(cid, video_url, caption=f"[Film] {prompt}")
+                bot.send_video(cid, video_url, caption=f"🎬 {prompt}")
                 return
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Відео ще обробляється, скоро прийде!")
+        bot.send_message(cid, "Видео в обработке, скоро пришлю!")
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, f"Помилка: {str(e)[:100]}")
+        bot.send_message(cid, f"Ошибка: {str(e)[:100]}")
 
-# ======== МОРСЬКІ НОВИНИ ========
+# ======== МОРСЬКІ НОВИНИ (GROQ) ========
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
@@ -216,9 +216,9 @@ def news(m):
         stop_loading(cid, load.message_id)
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False)
         user_data[cid]["news"].append(time.strftime("%H:%M"))
-    except Exception as e:
+    except:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "GROQ тимчасово недоступний. Спробуй за 10 сек.")
+        bot.send_message(cid, "GROQ перевантажено. Спробуй через 10 сек.")
 
 # ======== ПРЕЗЕНТАЦІЇ ========
 @bot.message_handler(func=lambda m: m.text == "Створити презентацію")
@@ -244,18 +244,17 @@ def gen_pres(m):
         pdf.ln(10)
         pdf.set_font("Arial", "", 11)
         for line in completion.choices[0].message.content.split("\n"):
-            if line.strip():
-                pdf.multi_cell(0, 7, line)
+            if line.strip(): pdf.multi_cell(0, 7, line)
         buffer = BytesIO()
         pdf.output(buffer)
         buffer.seek(0)
         stop_loading(cid, load.message_id)
-        bot.send_document(cid, buffer, caption=topic, filename=f"{topic[:50]}.pdf")
-    except Exception as e:
+        bot.send_document(cid, buffer, caption=topic, filename=f"{topic}.pdf")
+    except:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Помилка створення PDF.")
+        bot.send_message(cid, "Помилка PDF")
 
-# ======== ВІДПОВІДІ НА ПИТАННЯ ========
+# ======== ВІДПОВІДІ ========
 @bot.message_handler(func=lambda m: m.text == "Відповіді на питання")
 def ask_q(m):
     bot.send_message(m.chat.id, "Задай питання:\nПриклад: «Коли ЗСУ звільнять Крим?»")
@@ -275,25 +274,25 @@ def answer_q(m):
         )
         stop_loading(cid, load.message_id)
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False)
-    except Exception as e:
+    except:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "GROQ перевантажено. Спробуй за 10 сек.")
+        bot.send_message(cid, "GROQ перевантажено")
 
 # ======== НАЗАД ========
 @bot.message_handler(func=lambda m: m.text == "Назад")
-def back(m):
-    bot.send_message(m.chat.id, "Головне меню", reply_markup=main_menu())
+def back(m): bot.send_message(m.chat.id, "Головне меню", reply_markup=main_menu())
 
-# ======== WEBHOOK ========
+# ======== FLASK ========
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
-    if request.headers.get("content-type") == "application/json":
-        update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
+    try:
+        json_str = request.get_data(as_text=True)
+        update = telebot.types.Update.de_json(json_str)
         bot.process_new_updates([update])
         return "OK", 200
-    return "", 400  # ← ИСПРАВЛЕНО: запятая → пробел + кавычки
+    except:
+        return "", 400
 
-# ======== ЗАПУСК ========
 if __name__ == "__main__":
     bot.remove_webhook()
     time.sleep(1)
