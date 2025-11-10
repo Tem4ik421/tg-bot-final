@@ -20,11 +20,14 @@ WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# GROQ для тексту
-groq_client = Groq(api_key=GROQ_API_KEY)
+# GROQ — ФИКС ОШИБКИ PROXIES
+groq_client = Groq(
+    api_key=GROQ_API_KEY,
+    http_client_kwargs={"proxies": None}  # ← КЛЮЧЕВАЯ СТРОКА
+)
+
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 app = Flask(__name__)
-
 user_data = {}
 loading = {}
 
@@ -34,13 +37,14 @@ def keep_alive():
         try: requests.get(WEBHOOK_HOST, timeout=10)
         except: pass
         time.sleep(600)
+
 threading.Thread(target=keep_alive, daemon=True).start()
 
 # ======== АНІМАЦІЯ ========
 def start_loading(cid, text="Генерую"):
-    msg = bot.send_message(cid, f"{text} ⛵")
+    msg = bot.send_message(cid, f"{text} [Ship]")
     loading[cid] = msg.message_id
-    anim = ["⛵", "⚓", "🌊", "🌀", "🌪", "🚢", "🌅", "🛳"]
+    anim = ["[Ship]", "[Anchor]", "[Wave]", "[Swirl]", "[Tornado]", "[Ship]", "[Sunset]", "[Cruise]"]
     def animate():
         for _ in range(60):
             for e in anim:
@@ -64,13 +68,12 @@ def main_menu():
     k.row("Створити презентацію", "Відповіді на питання")
     return k
 
-# ======== /start — ТВОЄ ПОВІДОМЛЕННЯ ========
+# ======== /start ========
 @bot.message_handler(commands=["start"])
 def start(m):
     cid = m.chat.id
     uid = 1474031301
     reg_date = "2025-11-09"
-
     if cid not in user_data:
         user_data[cid] = {
             "reg_date": reg_date,
@@ -78,15 +81,14 @@ def start(m):
             "id": uid,
             "questions": [], "media": [], "video": [], "pres": [], "news": [], "answers": []
         }
-
     bot.send_message(cid,
         f"<b>Капитан @Tem4ik4751 на мостике!</b>\n"
         f"ID: <code>{uid}</code>\n"
         "Бот работает 24/7 — <b>Слава ЗСУ!</b>\n\n"
-        "Выбери функцию ⬇️",
+        "Выбери функцию [Down Arrow]",
         reply_markup=main_menu())
 
-# ======== ПРОФІЛЬ ========
+# ======== ПРОФІЛЬ + ІСТОРІЯ ========
 @bot.message_handler(func=lambda m: m.text == "Профиль")
 def profile(m):
     cid = m.chat.id
@@ -105,9 +107,8 @@ def profile(m):
 ID: <code>1474031301</code>
 Username: <b>@Artem1488962</b>
 Дата: <b>2025-11-09</b>
-
 <b>Статистика:</b>
-❓ Питань: {len(u['questions'])}
+[Question] Питань: {len(u['questions'])}
 Фото: {len(u['media'])}
 Відео: {len(u['video'])}
 Презентацій: {len(u['pres'])}
@@ -121,7 +122,7 @@ def history(c):
     t = c.data[2:]
     maps = {"q":"questions", "m":"media", "v":"video", "p":"pres", "n":"news", "a":"answers"}
     items = user_data[cid].get(maps[t], [])[-10:]
-    if not items: 
+    if not items:
         bot.answer_callback_query(c.id, "Пусто!", show_alert=True)
         return
     title = {"q":"Питання", "m":"Фото", "v":"Відео", "p":"Презентації", "n":"Новини", "a":"Відповіді"}[t]
@@ -130,14 +131,13 @@ def history(c):
         text += f"{i}. <code>{x[:50]}{'...' if len(x)>50 else ''}</code>\n"
     bot.send_message(cid, text)
 
-# ======== ГЕНЕРАТОР МЕДІА — HTTP KLING API ========
+# ======== ГЕНЕРАТОР МЕДІА ========
 @bot.message_handler(func=lambda m: m.text == "Генератор Медіа")
 def media_menu(m):
-    bot.send_message(m.chat.id, "Выбирай оружие, капитан!")
     k = types.ReplyKeyboardMarkup(resize_keyboard=True)
     k.row("Фото", "Відео")
     k.row("Назад")
-    bot.send_message(m.chat.id, reply_markup=k)
+    bot.send_message(m.chat.id, "Выбирай оружие, капитан!", reply_markup=k)
 
 @bot.message_handler(func=lambda m: m.text in ["Фото", "Відео"])
 def ask_prompt(m):
@@ -162,10 +162,10 @@ def generate_photo(m):
         ).json()
         img_url = r["data"][0]["url"]
         stop_loading(cid, load.message_id)
-        bot.send_photo(cid, img_url, caption=f"📸 {prompt}")
+        bot.send_photo(cid, img_url, caption=f"[Camera] {prompt}")
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, f"GROQ перегружен\nПопробуй через 20 сек")
+        bot.send_message(cid, "GROQ перегружен\nПопробуй через 20 сек")
 
 def generate_video(m):
     cid = m.chat.id
@@ -184,7 +184,6 @@ def generate_video(m):
             }
         ).json()
         task_id = r["data"]["task_id"]
-
         for _ in range(50):
             time.sleep(6)
             status = requests.get(f"https://api.klingai.com/v1/videos/tasks/{task_id}",
@@ -192,7 +191,7 @@ def generate_video(m):
             if status["data"]["status"] == "completed":
                 video_url = status["data"]["video_url"]
                 stop_loading(cid, load.message_id)
-                bot.send_video(cid, video_url, caption=f"🎬 {prompt}")
+                bot.send_video(cid, video_url, caption=f"[Film] {prompt}")
                 return
         stop_loading(cid, load.message_id)
         bot.send_message(cid, "Видео в обработке, скоро пришлю!")
@@ -200,7 +199,7 @@ def generate_video(m):
         stop_loading(cid, load.message_id)
         bot.send_message(cid, f"Ошибка: {str(e)[:100]}")
 
-# ======== МОРСЬКІ НОВИНИ (GROQ) ========
+# ======== НОВИНИ ========
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
@@ -252,7 +251,7 @@ def gen_pres(m):
         stop_loading(cid, load.message_id)
         bot.send_message(cid, "Помилка PDF")
 
-# ======== ВІДПОВІДІ ========
+# ======== ПИТАННЯ ========
 @bot.message_handler(func=lambda m: m.text == "Відповіді на питання")
 def ask_q(m):
     bot.send_message(m.chat.id, "Задай питання:\nПриклад: «Коли ЗСУ звільнять Крим?»")
@@ -278,7 +277,8 @@ def answer_q(m):
 
 # ======== НАЗАД ========
 @bot.message_handler(func=lambda m: m.text == "Назад")
-def back(m): bot.send_message(m.chat.id, "Головне меню", reply_markup=main_menu())
+def back(m):
+    bot.send_message(m.chat.id, "Головне меню", reply_markup=main_menu())
 
 # ======== FLASK ========
 @app.route(WEBHOOK_PATH, methods=["POST"])
