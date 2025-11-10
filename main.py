@@ -20,9 +20,9 @@ WEBHOOK_HOST = os.getenv("WEBHOOK_HOST") or "https://tg-bot-final-1.onrender.com
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# Модели (ИСПРАВЛЕНО)
-MODEL_TEXT = "models/gemini-1.5-flash-latest" # Используем Flash, он должен работать с Free Trial
-MODEL_IMAGE = "models/imagen-3-fast" # Эта модель должна работать с твоим НОВЫМ ключом
+# Модели (ИСПРАВЛЕНО НА "КРУТЫЕ")
+MODEL_TEXT = "models/gemini-2.5-pro"  # Самая крутая модель текста
+MODEL_IMAGE = "models/imagen-3"       # Самая крутая модель фото (не -fast)
 
 genai.configure(api_key=GEMINI_API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
@@ -214,14 +214,14 @@ def generate_image(message):
         if loading:
             stop_loading_animation(chat_id, loading.message_id)
         # -------------------------------------------------------------------
-        # ✅ ИСПРАВЛЕНИЕ #1
+        # ✅ ИСПРАВЛЕНИЕ #1 (Показываем настоящую ошибку)
         # -------------------------------------------------------------------
-        bot.send_message(chat_id, f"❌ Ошибка при генерации изображения: {e}") # <-- Теперь здесь {e}
+        bot.send_message(chat_id, f"❌ Ошибка при генерации изображения: {e}")
 
     bot.send_message(chat_id, "Что делаем дальше?", reply_markup=main_menu())
 
 # -------------------------------------------------------------------
-# (Функция для Imagen, оставляем как было)
+# (Функция для Imagen)
 # -------------------------------------------------------------------
 def generate_image_bytes(prompt: str) -> bytes | None:
     """Генерация изображения через Imagen (официальный endpoint v1)."""
@@ -286,7 +286,7 @@ def maritime_news(message):
     except Exception as e:
         if loading:
             stop_loading_animation(chat_id, loading.message_id)
-        bot.send_message(chat_id, f"⚠️ Ошибка при получении новостей: {e}") # <-- Тоже исправлено на {e}
+        bot.send_message(chat_id, f"⚠️ Ошибка при получении новостей: {e}") 
 
 # ======== 🎨 Презентации ========
 @bot.message_handler(func=lambda m: m.text == "🎨 Создать презентацию")
@@ -424,7 +424,7 @@ def generate_presentation(message):
     except Exception as e:
         if loading_msg:
             stop_loading_animation(chat_id, loading_msg.message_id)
-        bot.send_message(chat_id, f"⚠️ Ошибка при создании презентации: {e}") # <-- Тоже исправлено на {e}
+        bot.send_message(chat_id, f"⚠️ Ошибка при создании презентации: {e}")
 
     bot.send_message(chat_id, "Что делаем дальше?", reply_markup=main_menu())
 
@@ -433,10 +433,10 @@ def generate_presentation(message):
 @bot.message_handler(func=lambda m: m.text == "❓ Ответы на вопросы")
 def ask_question(message):
     msg_text = (
-        "💬 Задай любой вопрос — я отвечу через Gemini 1.5 Flash.\n\n" # <-- Текст обновлен
+        "💬 Задай любой вопрос — я отвечу через Gemini 2.5 Pro.\n\n" # <-- Текст обновлен
         "<i>Например: «расскажи про будущее AI» или «что такое МАРПОЛ?»</i>"
     )
-    msg = bot.send_message(message.chat_id, msg_text, reply_markup=types.ReplyKeyboardRemove())
+    msg = bot.send_message(message.chat.id, msg_text, reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(msg, answer_question)
 
 def answer_question(message):
@@ -478,16 +478,16 @@ def answer_question(message):
         if loading:
             stop_loading_animation(chat_id, loading.message_id)
         # -------------------------------------------------------------------
-        # ✅ ИСПРАВЛЕНИЕ #2 (САМОЕ ВАЖНОЕ)
+        # ✅ ИСПРАВЛЕНИЕ #2 (Показываем настоящую ошибку)
         # -------------------------------------------------------------------
-        bot.send_message(chat_id, f"⚠️ Ошибка при ответе: {e}") # <-- Теперь здесь {e}, а не chat_id
+        bot.send_message(chat_id, f"⚠️ Ошибка при ответе: {e}")
 
     bot.send_message(chat_id, "Что делаем дальше?", reply_markup=main_menu())
 
 def generate_image_helper(chat_id, prompt):
     """Хелпер: генерирует и сразу отправляет фото (для Q&A)."""
     try:
-        model = genai.GenerativeModel(MODEL_TEXT) # Используем Flash для промпта
+        model = genai.GenerativeModel(MODEL_TEXT) 
         img_prompt_gen = model.generate_content(
             f"Создай один короткий, фотореалистичный промпт на английском для генерации изображения по теме: «{prompt}»"
         )
