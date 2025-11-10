@@ -9,16 +9,21 @@ from telebot import types
 from fpdf import FPDF
 from io import BytesIO
 from groq import Groq
+import replicate
 
 # ======== КОНФІГ ========
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-KLING_API_KEY = os.getenv("KLING_API_KEY")
-WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL")  # ← Render даёт URL
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
+WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL")
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
+# Ініціалізація
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+if REPLICATE_API_TOKEN:
+    replicate.Client(api_token=REPLICATE_API_TOKEN)
+
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 app = Flask(__name__)
 user_data = {}
@@ -51,9 +56,9 @@ def setup_webhook():
 
 # ======== АНІМАЦІЯ ========
 def start_loading(cid, text="Генерую"):
-    msg = bot.send_message(cid, f"{text} ⛵")
+    msg = bot.send_message(cid, f"{text} [Ship]")
     loading[cid] = msg.message_id
-    anim = ["⛵", "⚓", "🌊", "🌀", "🌪", "🚢", "🌅", "🛳"]
+    anim = ["[Ship]", "[Anchor]", "[Wave]", "[Swirl]", "[Tornado]", "[Ship]", "[Sunset]", "[Cruise]"]
     def animate():
         for _ in range(60):
             for e in anim:
@@ -72,7 +77,7 @@ def stop_loading(cid, mid):
     except:
         pass
 
-# ======== ГЛАВНОЕ МЕНЮ (КНОПКИ НЕ ПРОПАДАЮТ!) ========
+# ======== ГОЛОВНЕ МЕНЮ — КНОПКИ ЗАВЖДИ! ========
 def main_menu():
     k = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     k.row("Профиль")
@@ -91,7 +96,7 @@ def start(m):
         "ID: <code>1474031301</code>\n"
         "Бот працює 24/7 — <b>Слава ЗСУ!</b>\n\n"
         "<b>Обери функцію</b>",
-        reply_markup=main_menu())  # ← КНОПКИ ОСТАЮТСЯ!
+        reply_markup=main_menu())
 
 # ======== ПРОФІЛЬ ========
 @bot.message_handler(func=lambda m: m.text == "Профиль")
@@ -111,15 +116,30 @@ def profile(m):
 <b>Морський профіль</b>
 ID: <code>1474031301</code>
 <b>Статистика:</b>
-❓ Питань: {len(u.get('questions', []))}
+[Question] Питань: {len(u.get('questions', []))}
 Фото: {len(u.get('media', []))}
 Відео: {len(u.get('video', []))}
 Презентацій: {len(u.get('pres', []))}
 Новин: {len(u.get('news', []))}
 Відповідей: {len(u.get('answers', []))}
-    """.strip(), reply_markup=kb)
+    """.strip(), reply_markup=kb, parse_mode="HTML")
 
-# ======== ГЕНЕРАТОР МЕДІА (ФИКС ОШИБКИ KLING) ========
+@bot.callback_query_handler(func=lambda c: c.data.startswith("h_"))
+def history(c):
+    cid = c.message.chat.id
+    t = c.data[2:]
+    maps = {"q":"questions", "m":"media", "v":"video", "p":"pres", "n":"news", "a":"answers"}
+    items = user_data.get(cid, {}).get(maps.get(t, ""), [])[-10:]
+    if not items:
+        bot.answer_callback_query(c.id, "Пусто!", show_alert=True)
+        return
+    title = {"q":"Питання", "m":"Фото", "v":"Відео", "p":"Презентації", "n":"Новини", "a":"Відповіді"}[t]
+    text = f"<b>{title} (останні 10):</b>\n\n"
+    for i, x in enumerate(items, 1):
+        text += f"{i}. <code>{x[:50]}{'...' if len(x)>50 else ''}</code>\n"
+    bot.send_message(cid, text, reply_markup=main_menu())
+
+# ======== ГЕНЕРАТОР МЕДІА ========
 @bot.message_handler(func=lambda m: m.text == "Генератор Медіа")
 def media_menu(m):
     k = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -134,93 +154,88 @@ def ask_prompt(m):
     bot.send_message(m.chat.id,
         f"Опиши {media_type}:\n"
         f"Приклад: «{example}»",
-        reply_markup=types.ReplyKeyboardRemove())  # ← Убираем временно
-    bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video, m.text)
+        reply_markup=types.ReplyKeyboardRemove())
+    bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video)
 
-def generate_photo(m, prompt=None):
+# === ФОТО: FLUX.1 SCHNELL ===
+def generate_photo(m):
     cid = m.chat.id
-    prompt = prompt or m.text
+    prompt = m.text
     user_data.setdefault(cid, {})["media"].append(prompt)
     load = start_loading(cid, "Генерую фото")
 
-    if not KLING_API_KEY:
+    if not REPLICATE_API_TOKEN:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "KLING API не налаштований.", reply_markup=main_menu())
+        bot.send_message(cid, "Replicate API не налаштований.", reply_markup=main_menu())
         return
 
-    headers = {"Authorization": f"Bearer {KLING_API_KEY}", "Content-Type": "application/json"}
     try:
-        r = requests.post(
-            "https://api.klingai.com/v1/images/generations",
-            headers=headers,
-            json={"prompt": prompt + ", photorealistic, 8K, ultra detailed", "n": 1, "size": "1024x1024"},
-            timeout=60
+        output = replicate.run(
+            "black-forest-labs/flux-schnell",
+            input={
+                "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting",
+                "num_outputs": 1,
+                "width": 1024,
+                "height": 1024,
+                "num_inference_steps": 4
+            }
         )
-        r.raise_for_status()
-        data = r.json()
-        if not data.get("data"):
-            raise ValueError("Порожня відповідь")
-        img_url = data["data"][0]["url"]
+        img_url = output[0]
         stop_loading(cid, load.message_id)
-        bot.send_photo(cid, img_url, caption=f"📸 {prompt}", reply_markup=main_menu())  # ← ВОЗВРАЩАЕМ КНОПКИ!
-    except requests.exceptions.HTTPError as e:
-        stop_loading(cid, load.message_id)
-        try:
-            error = r.json().get("error", {}).get("message", "Невідома помилка")
-        except:
-            error = "Сервер не відповідає"
-        bot.send_message(cid, f"Помилка Kling: {error}", reply_markup=main_menu())
+        bot.send_photo(cid, img_url, caption=f"[Camera] {prompt}", reply_markup=main_menu())
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Сервер тимчасово недоступний. Спробуй за 30 сек.", reply_markup=main_menu())
+        bot.send_message(cid, f"Помилка фото: {str(e)[:80]}", reply_markup=main_menu())
 
-def generate_video(m, prompt=None):
+# === ВІДЕО: STABLE VIDEO DIFFUSION ===
+def generate_video(m):
     cid = m.chat.id
-    prompt = prompt or m.text
+    prompt = m.text
     user_data.setdefault(cid, {})["video"].append(prompt)
     load = start_loading(cid, "Створюю відео")
 
-    if not KLING_API_KEY:
+    if not REPLICATE_API_TOKEN:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "KLING API не налаштований.", reply_markup=main_menu())
+        bot.send_message(cid, "Replicate API не налаштований.", reply_markup=main_menu())
         return
 
-    headers = {"Authorization": f"Bearer {KLING_API_KEY}", "Content-Type": "application/json"}
     try:
-        r = requests.post(
-            "https://api.klingai.com/v1/videos/generations",
-            headers=headers,
-            json={
-                "prompt": prompt + ", cinematic, 4K, ultra realistic, smooth motion",
-                "negative_prompt": "blurry, low quality, distortion",
-                "duration": 10,
-                "aspect_ratio": "16:9"
-            },
-            timeout=60
+        # Крок 1: Генеруємо ключовий кадр
+        image_output = replicate.run(
+            "black-forest-labs/flux-schnell",
+            input={
+                "prompt": prompt + ", cinematic keyframe, 4K, ultra realistic",
+                "num_outputs": 1,
+                "width": 1024,
+                "height": 576,
+                "num_inference_steps": 4
+            }
         )
-        r.raise_for_status()
-        task_id = r.json()["data"]["task_id"]
+        image_url = image_output[0]
 
-        for _ in range(60):
-            time.sleep(6)
-            status = requests.get(f"https://api.klingai.com/v1/videos/tasks/{task_id}", headers=headers, timeout=60).json()
-            if status["data"]["status"] == "completed":
-                video_url = status["data"]["video_url"]
-                stop_loading(cid, load.message_id)
-                bot.send_video(cid, video_url, caption=f"🎬 {prompt}", reply_markup=main_menu())
-                return
+        # Крок 2: Анімуємо у відео
+        video_output = replicate.run(
+            "stability-ai/stable-video-diffusion-img2vid-xt",
+            input={
+                "image": image_url,
+                "motion_bucket_id": 127,
+                "fps": 7,
+                "noise_aug_strength": 0.02
+            }
+        )
+        video_url = video_output[0]
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Відео обробляється — прийде автоматично!", reply_markup=main_menu())
+        bot.send_video(cid, video_url, caption=f"[Film] {prompt}", reply_markup=main_menu())
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Помилка генерації відео.", reply_markup=main_menu())
+        bot.send_message(cid, f"Помилка відео: {str(e)[:80]}", reply_markup=main_menu())
 
 # ======== НАЗАД ========
 @bot.message_handler(func=lambda m: m.text == "Назад")
 def back(m):
     bot.send_message(m.chat.id, "Головне меню", reply_markup=main_menu())
 
-# ======== ОСТАЛЬНЫЕ ФУНКЦИИ (с возвратом кнопок) ========
+# ======== ІНШІ ФУНКЦІЇ — З КНОПКАМИ! ========
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
@@ -237,6 +252,7 @@ def news(m):
         )
         stop_loading(cid, load.message_id)
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
+        user_data.setdefault(cid, {})["news"].append(time.strftime("%H:%M"))
     except:
         stop_loading(cid, load.message_id)
         bot.send_message(cid, "GROQ тимчасово недоступний.", reply_markup=main_menu())
@@ -293,7 +309,7 @@ def answer_q(m):
         bot.send_message(cid, "GROQ не налаштований.", reply_markup=main_menu())
         return
     try:
-        completion = BOT.chat.completions.create(
+        completion = groq_client.chat.completions.create(
             model="llama-3.1-70b-versatile",
             messages=[{"role": "user", "content": f"Відповідь: {q}. 3 абзаци, фото, відео YouTube, 2 джерела."}],
             max_tokens=1200
