@@ -14,13 +14,11 @@ from groq import Groq
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 KLING_API_KEY = os.getenv("KLING_API_KEY")
-WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL")  # ← RENDER ДАЁТ АВТОМАТИЧЕСКИ
+WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL")  # ← Render даёт URL
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# GROQ
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 app = Flask(__name__)
 user_data = {}
@@ -37,7 +35,7 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# ======== АВТО-WEBHOOK (СРАБАТЫВАЕТ ПРИ СТАРТЕ) ========
+# ======== АВТО-WEBHOOK ========
 def setup_webhook():
     try:
         info = bot.get_webhook_info()
@@ -47,15 +45,15 @@ def setup_webhook():
             bot.set_webhook(url=WEBHOOK_URL)
             print(f"Webhook встановлено: {WEBHOOK_URL}")
         else:
-            print(f"Webhook вже активний: {info.url}")
+            print(f"Webhook активний: {info.url}")
     except Exception as e:
         print(f"Помилка webhook: {e}")
 
 # ======== АНІМАЦІЯ ========
 def start_loading(cid, text="Генерую"):
-    msg = bot.send_message(cid, f"{text} [Ship]")
+    msg = bot.send_message(cid, f"{text} ⛵")
     loading[cid] = msg.message_id
-    anim = ["[Ship]", "[Anchor]", "[Wave]", "[Swirl]", "[Tornado]", "[Ship]", "[Sunset]", "[Cruise]"]
+    anim = ["⛵", "⚓", "🌊", "🌀", "🌪", "🚢", "🌅", "🛳"]
     def animate():
         for _ in range(60):
             for e in anim:
@@ -74,7 +72,7 @@ def stop_loading(cid, mid):
     except:
         pass
 
-# ======== МЕНЮ ========
+# ======== ГЛАВНОЕ МЕНЮ (КНОПКИ НЕ ПРОПАДАЮТ!) ========
 def main_menu():
     k = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     k.row("Профиль")
@@ -92,14 +90,14 @@ def start(m):
         "<b>Капитан @Tem4ik4751 на мостике!</b>\n"
         "ID: <code>1474031301</code>\n"
         "Бот працює 24/7 — <b>Слава ЗСУ!</b>\n\n"
-        "Обери функцію [Down Arrow]",
-        reply_markup=main_menu())
+        "<b>Обери функцію</b>",
+        reply_markup=main_menu())  # ← КНОПКИ ОСТАЮТСЯ!
 
-# ======== ПРОФІЛЬ + ІСТОРІЯ ========
+# ======== ПРОФІЛЬ ========
 @bot.message_handler(func=lambda m: m.text == "Профиль")
 def profile(m):
     cid = m.chat.id
-    u = user_data.get(cid, {"questions": [], "media": [], "video": [], "pres": [], "news": [], "answers": []})
+    u = user_data.get(cid, {})
     kb = types.InlineKeyboardMarkup(row_width=2)
     kb.add(
         types.InlineKeyboardButton("Питання", callback_data="h_q"),
@@ -113,30 +111,15 @@ def profile(m):
 <b>Морський профіль</b>
 ID: <code>1474031301</code>
 <b>Статистика:</b>
-[Question] Питань: {len(u['questions'])}
-Фото: {len(u['media'])}
-Відео: {len(u['video'])}
-Презентацій: {len(u['pres'])}
-Новин: {len(u['news'])}
-Відповідей: {len(u['answers'])}
+❓ Питань: {len(u.get('questions', []))}
+Фото: {len(u.get('media', []))}
+Відео: {len(u.get('video', []))}
+Презентацій: {len(u.get('pres', []))}
+Новин: {len(u.get('news', []))}
+Відповідей: {len(u.get('answers', []))}
     """.strip(), reply_markup=kb)
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("h_"))
-def history(c):
-    cid = c.message.chat.id
-    t = c.data[2:]
-    maps = {"q":"questions", "m":"media", "v":"video", "p":"pres", "n":"news", "a":"answers"}
-    items = user_data.get(cid, {}).get(maps.get(t, ""), [])[-10:]
-    if not items:
-        bot.answer_callback_query(c.id, "Пусто!", show_alert=True)
-        return
-    title = {"q":"Питання", "m":"Фото", "v":"Відео", "p":"Презентації", "n":"Новини", "a":"Відповіді"}[t]
-    text = f"<b>{title} (останні 10):</b>\n\n"
-    for i, x in enumerate(items, 1):
-        text += f"{i}. <code>{x[:50]}{'...' if len(x)>50 else ''}</code>\n"
-    bot.send_message(cid, text)
-
-# ======== ГЕНЕРАТОР МЕДІА (БЕЗ ОШИБОК) ========
+# ======== ГЕНЕРАТОР МЕДІА (ФИКС ОШИБКИ KLING) ========
 @bot.message_handler(func=lambda m: m.text == "Генератор Медіа")
 def media_menu(m):
     k = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -151,18 +134,18 @@ def ask_prompt(m):
     bot.send_message(m.chat.id,
         f"Опиши {media_type}:\n"
         f"Приклад: «{example}»",
-        reply_markup=types.ReplyKeyboardRemove())
-    bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video)
+        reply_markup=types.ReplyKeyboardRemove())  # ← Убираем временно
+    bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video, m.text)
 
-def generate_photo(m):
+def generate_photo(m, prompt=None):
     cid = m.chat.id
-    prompt = m.text
+    prompt = prompt or m.text
     user_data.setdefault(cid, {})["media"].append(prompt)
     load = start_loading(cid, "Генерую фото")
 
     if not KLING_API_KEY:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "KLING API ключ не встановлено. Звернись до адміна.")
+        bot.send_message(cid, "KLING API не налаштований.", reply_markup=main_menu())
         return
 
     headers = {"Authorization": f"Bearer {KLING_API_KEY}", "Content-Type": "application/json"}
@@ -175,28 +158,31 @@ def generate_photo(m):
         )
         r.raise_for_status()
         data = r.json()
-        if "data" not in data or not data["data"]:
-            raise ValueError("Порожня відповідь від Kling")
+        if not data.get("data"):
+            raise ValueError("Порожня відповідь")
         img_url = data["data"][0]["url"]
         stop_loading(cid, load.message_id)
-        bot.send_photo(cid, img_url, caption=f"[Camera] {prompt}")
+        bot.send_photo(cid, img_url, caption=f"📸 {prompt}", reply_markup=main_menu())  # ← ВОЗВРАЩАЕМ КНОПКИ!
     except requests.exceptions.HTTPError as e:
         stop_loading(cid, load.message_id)
-        error_msg = r.json().get("error", {}).get("message", "Невідома помилка API")
-        bot.send_message(cid, f"Помилка Kling: {error_msg}")
+        try:
+            error = r.json().get("error", {}).get("message", "Невідома помилка")
+        except:
+            error = "Сервер не відповідає"
+        bot.send_message(cid, f"Помилка Kling: {error}", reply_markup=main_menu())
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Сервер тимчасово недоступний. Спробуй за 30 сек.")
+        bot.send_message(cid, "Сервер тимчасово недоступний. Спробуй за 30 сек.", reply_markup=main_menu())
 
-def generate_video(m):
+def generate_video(m, prompt=None):
     cid = m.chat.id
-    prompt = m.text
+    prompt = prompt or m.text
     user_data.setdefault(cid, {})["video"].append(prompt)
     load = start_loading(cid, "Створюю відео")
 
     if not KLING_API_KEY:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "KLING API ключ не встановлено.")
+        bot.send_message(cid, "KLING API не налаштований.", reply_markup=main_menu())
         return
 
     headers = {"Authorization": f"Bearer {KLING_API_KEY}", "Content-Type": "application/json"}
@@ -221,22 +207,27 @@ def generate_video(m):
             if status["data"]["status"] == "completed":
                 video_url = status["data"]["video_url"]
                 stop_loading(cid, load.message_id)
-                bot.send_video(cid, video_url, caption=f"[Film] {prompt}")
+                bot.send_video(cid, video_url, caption=f"🎬 {prompt}", reply_markup=main_menu())
                 return
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Відео обробляється — прийде автоматично!")
+        bot.send_message(cid, "Відео обробляється — прийде автоматично!", reply_markup=main_menu())
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Помилка генерації відео.")
+        bot.send_message(cid, "Помилка генерації відео.", reply_markup=main_menu())
 
-# ======== НОВИНИ, ПРЕЗЕНТАЦІЇ, ПИТАННЯ ========
+# ======== НАЗАД ========
+@bot.message_handler(func=lambda m: m.text == "Назад")
+def back(m):
+    bot.send_message(m.chat.id, "Головне меню", reply_markup=main_menu())
+
+# ======== ОСТАЛЬНЫЕ ФУНКЦИИ (с возвратом кнопок) ========
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
     load = start_loading(cid, "Шукаю новини")
     if not groq_client:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "GROQ не налаштований.")
+        bot.send_message(cid, "GROQ не налаштований.", reply_markup=main_menu())
         return
     try:
         completion = groq_client.chat.completions.create(
@@ -245,15 +236,14 @@ def news(m):
             max_tokens=1000
         )
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False)
-        user_data.setdefault(cid, {})["news"].append(time.strftime("%H:%M"))
+        bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
     except:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "GROQ тимчасово недоступний.")
+        bot.send_message(cid, "GROQ тимчасово недоступний.", reply_markup=main_menu())
 
 @bot.message_handler(func=lambda m: m.text == "Створити презентацію")
 def create_pres(m):
-    bot.send_message(m.chat.id, "Тема презентації?\nПриклад: «Перемога ЗСУ на морі»")
+    bot.send_message(m.chat.id, "Тема презентації?\nПриклад: «Перемога ЗСУ на морі»", reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, gen_pres)
 
 def gen_pres(m):
@@ -263,7 +253,7 @@ def gen_pres(m):
     load = start_loading(cid, "Створюю PDF")
     if not groq_client:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "GROQ не налаштований.")
+        bot.send_message(cid, "GROQ не налаштований.", reply_markup=main_menu())
         return
     try:
         completion = groq_client.chat.completions.create(
@@ -283,14 +273,14 @@ def gen_pres(m):
         pdf.output(buffer)
         buffer.seek(0)
         stop_loading(cid, load.message_id)
-        bot.send_document(cid, buffer, caption=topic, filename=f"{topic[:50]}.pdf")
+        bot.send_document(cid, buffer, caption=topic, filename=f"{topic[:50]}.pdf", reply_markup=main_menu())
     except:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Помилка створення PDF.")
+        bot.send_message(cid, "Помилка створення PDF.", reply_markup=main_menu())
 
 @bot.message_handler(func=lambda m: m.text == "Відповіді на питання")
 def ask_q(m):
-    bot.send_message(m.chat.id, "Задай питання:\nПриклад: «Коли ЗСУ звільнять Крим?»")
+    bot.send_message(m.chat.id, "Задай питання:\nПриклад: «Коли ЗСУ звільнять Крим?»", reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, answer_q)
 
 def answer_q(m):
@@ -300,25 +290,21 @@ def answer_q(m):
     load = start_loading(cid, "Думаю...")
     if not groq_client:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "GROQ не налаштований.")
+        bot.send_message(cid, "GROQ не налаштований.", reply_markup=main_menu())
         return
     try:
-        completion = groq_client.chat.completions.create(
+        completion = BOT.chat.completions.create(
             model="llama-3.1-70b-versatile",
             messages=[{"role": "user", "content": f"Відповідь: {q}. 3 абзаци, фото, відео YouTube, 2 джерела."}],
             max_tokens=1200
         )
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False)
+        bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
     except:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "GROQ перевантажено.")
+        bot.send_message(cid, "GROQ перевантажено.", reply_markup=main_menu())
 
-@bot.message_handler(func=lambda m: m.text == "Назад")
-def back(m):
-    bot.send_message(m.chat.id, "Головне меню", reply_markup=main_menu())
-
-# ======== FLASK WEBHOOK ========
+# ======== FLASK ========
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     if request.headers.get("content-type") == "application/json":
@@ -330,14 +316,6 @@ def webhook():
 # ======== ЗАПУСК ========
 if __name__ == "__main__":
     print("Запуск бота...")
-    setup_webhook()  # ← АВТОМАТИЧЕСКИЙ WEBHOOK
+    setup_webhook()
     print("Бот запущено! Слава ЗСУ!")
-    # GUNICORN — УБИРАЕТ WARNING
-    import gunicorn.app.base
-    from gunicorn.app.wsgiapp import run
-    if os.getenv("RENDER"):
-        # Render использует gunicorn автоматически
-        app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
-    else:
-        # Локально — для теста
-        app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
