@@ -20,9 +20,9 @@ WEBHOOK_HOST = os.getenv("WEBHOOK_HOST") or "https://tg-bot-final-1.onrender.com
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# Модели
-MODEL_TEXT = "models/gemini-1.5-pro-latest"
-MODEL_IMAGE = "models/imagen-3-fast" # Как ты и указал, для v1 endpoint
+# Модели (ИСПРАВЛЕНО)
+MODEL_TEXT = "models/gemini-2.5-pro"
+MODEL_IMAGE = "models/imagen-4.0-fast-generate-001"
 
 genai.configure(api_key=GEMINI_API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
@@ -94,14 +94,14 @@ def main_menu():
 def start(message):
     chat_id = message.chat.id
     user_history.setdefault(chat_id, {
-        "questions": [], 
-        "media": [], 
-        "presentations": [], 
+        "questions": [],
+        "media": [],
+        "presentations": [],
         "news": []
     })
     bot.send_message(
-        chat_id, 
-        f"Привет, {message.from_user.first_name}! 👋\nЯ твой ассистент на базе Gemini. Выбери опцию:", 
+        chat_id,
+        f"Привет, {message.from_user.first_name}! 👋\nЯ твой ассистент на базе Gemini. Выбери опцию:",
         reply_markup=main_menu()
     )
 
@@ -112,7 +112,7 @@ def profile(message):
     hist = user_history.get(chat_id, {
         "questions": [], "media": [], "presentations": [], "news": []
     })
-    
+
     text = (
         f"<b>Твой профиль</b>\n\n"
         f"🆔 ID: <code>{chat_id}</code>\n"
@@ -124,7 +124,7 @@ def profile(message):
         f"  📘 Презентаций: {len(hist['presentations'])}\n"
         f"  ⚓ Новостей просмотрено: {len(hist['news'])}"
     )
-    
+
     markup = types.InlineKeyboardMarkup()
     markup.row(
         types.InlineKeyboardButton("Показать вопросы", callback_data="history_questions"),
@@ -134,7 +134,7 @@ def profile(message):
         types.InlineKeyboardButton("Показать презентации", callback_data="history_presentations"),
         types.InlineKeyboardButton("Показать новости", callback_data="history_news")
     )
-    
+
     bot.send_message(chat_id, text, reply_markup=markup)
 
 # --- Обработчик кнопок профиля ---
@@ -142,9 +142,9 @@ def profile(message):
 def handle_history_callback(call):
     chat_id = call.message.chat.id
     category = call.data.split('_')[1]
-    
+
     hist_list = user_history.get(chat_id, {}).get(category, [])
-    
+
     if not hist_list:
         bot.answer_callback_query(call.id, "📭 В этой категории история пуста.", show_alert=True)
         return
@@ -156,10 +156,10 @@ def handle_history_callback(call):
         "news": "⚓ Просмотренные новости (по датам):"
     }
     title = titles.get(category, "📜 Твоя история:")
-    
+
     formatted_list = [f"• <code>{item}</code>" for item in hist_list[-10:]]
     text = f"<b>{title}</b> (последние 10):\n\n" + "\n".join(formatted_list)
-    
+
     bot.answer_callback_query(call.id)
     bot.send_message(chat_id, text)
 
@@ -201,13 +201,13 @@ def generate_image(message):
     try:
         # Генерируем байты изображения
         image_bytes = generate_image_bytes(prompt) # Используем ИСПРАВЛЕННУЮ функцию
-        
+
         if not image_bytes:
             raise ValueError("Не удалось сгенерировать изображение (пустой ответ от API).")
 
         user_history[chat_id]["media"].append(prompt)
         print(f"📸 Изображение сгенерировано для {chat_id}: {prompt}")
-        
+
         stop_loading_animation(chat_id, loading.message_id)
         bot.send_photo(chat_id, image_bytes, caption=f"🖼️ Ваш запрос: <i>{prompt}</i>")
 
@@ -215,14 +215,14 @@ def generate_image(message):
         if loading:
             stop_loading_animation(chat_id, loading.message_id)
         bot.send_message(chat_id, f"❌ Ошибка при генерации изображения: {e}")
-    
+
     bot.send_message(chat_id, "Что делаем дальше?", reply_markup=main_menu())
 
 # -------------------------------------------------------------------
 # ✅ ИСПРАВЛЕННАЯ ФУНКЦИЯ (твоя версия)
 # -------------------------------------------------------------------
 def generate_image_bytes(prompt: str) -> bytes | None:
-    """Генерация изображения через Imagen 3 Fast (официальный endpoint v1)."""
+    """Генерация изображения через Imagen (официальный endpoint v1)."""
     try:
         # Используем v1 endpoint, а не v1beta
         url = f"https://generativelanguage.googleapis.com/v1/models/{MODEL_IMAGE}:predict?key={GEMINI_API_KEY}"
@@ -233,7 +233,7 @@ def generate_image_bytes(prompt: str) -> bytes | None:
                     # Добавляем параметры, как ты предложил
                     "parameters": {
                         "sampleCount": 1,
-                        "aspectRatio": "1:1", 
+                        "aspectRatio": "1:1",
                         "safetyFilterLevel": "block_none" # Осторожно: это отключает фильтры
                     }
                 }
@@ -275,17 +275,17 @@ def maritime_news(message):
             "5. 🎬 (Если найдешь) *Ссылку (URL) на YouTube видео* по теме.\n\n"
             "Отформатируй ответ красиво для Telegram (используй Markdown или HTML)."
         )
-        
+
         response = model.generate_content(prompt)
-        
+
         stop_loading_animation(chat_id, loading.message_id)
-        
+
         if response.text:
             bot.send_message(chat_id, response.text, disable_web_page_preview=True)
             user_history[chat_id]["news"].append(datetime.now().strftime('%Y-%m-%d %H:%M'))
         else:
             bot.send_message(chat_id, "❌ Не удалось получить новости.")
-            
+
     except Exception as e:
         if loading:
             stop_loading_animation(chat_id, loading.message_id)
@@ -340,18 +340,18 @@ def generate_presentation(message):
         [HEADER: <Заголовок слайда 4 (Заключение)>]
         [TEXT: <2-3 абзаца текста для слайда 4>]
         """
-        
+
         text_response = text_model.generate_content(prompt).text
-        
+
         title = (re.search(r"\[TITLE\]\n(.*?)\n\n\[SLIDE_1\]", text_response, re.DOTALL) or [None, "Презентация"])[1].strip()
         slides_content = re.findall(r"\[IMAGE_PROMPT: (.*?)\]\n\[HEADER: (.*?)\]\n\[TEXT: (.*?)\](?=\n\n\[SLIDE_|\Z)", text_response, re.DOTALL)
-        
+
         if not slides_content:
             raise ValueError("Gemini вернул текст в неверном формате. Не могу распарсить.")
 
         # 3. Генерируем изображения
         bot.edit_message_text(f"🖼️ Генерирую {len(slides_content)} изображений...", chat_id, loading_msg.message_id)
-        
+
         images = []
         for img_prompt, _, _ in slides_content:
             img_bytes = generate_image_bytes(img_prompt.strip()) # Используем ИСПРАВЛЕННУЮ функцию
@@ -362,9 +362,9 @@ def generate_presentation(message):
 
         # 4. Собираем PDF
         bot.edit_message_text("✍️ Собираю PDF-документ...", chat_id, loading_msg.message_id)
-        
+
         pdf = FPDF()
-        
+
         try:
             pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
             pdf.add_font('DejaVu', 'B', 'DejaVuSans-Bold.ttf', uni=True)
@@ -392,14 +392,14 @@ def generate_presentation(message):
         # --- Слайды с контентом ---
         for i, (img_prompt, header, text) in enumerate(slides_content):
             if i == 0: continue
-            
+
             pdf.add_page()
-            
+
             if images[i]:
                 img_path = f"temp_img_{chat_id}_{i}.png"
                 with open(img_path, 'wb') as f:
                     f.write(images[i].getvalue())
-                
+
                 img_w, img_h = 190, 95
                 x_pos = (210 - img_w) / 2
                 pdf.image(img_path, x=x_pos, y=10, w=img_w)
@@ -411,16 +411,16 @@ def generate_presentation(message):
             pdf.set_font(font, 'B', 18)
             pdf.multi_cell(0, 10, header.strip(), align='C')
             pdf.ln(5)
-            
+
             pdf.set_font(font, '', 12)
             pdf.multi_cell(0, 8, text.strip())
 
         # 5. Отправляем PDF
         filename = f"presentation_{chat_id}_{topic.replace(' ','_')[:15]}.pdf"
         pdf_bytes = pdf.output(dest='S').encode('latin-1')
-        
+
         stop_loading_animation(chat_id, loading_msg.message_id)
-        
+
         bot.send_document(chat_id, BytesIO(pdf_bytes), visible_file_name=filename)
         print(f"📘 PDF готов для {chat_id}")
 
@@ -428,7 +428,7 @@ def generate_presentation(message):
         if loading_msg:
             stop_loading_animation(chat_id, loading_msg.message_id)
         bot.send_message(chat_id, f"⚠️ Ошибка при создании презентации: {e}")
-    
+
     bot.send_message(chat_id, "Что делаем дальше?", reply_markup=main_menu())
 
 
@@ -436,7 +436,8 @@ def generate_presentation(message):
 @bot.message_handler(func=lambda m: m.text == "❓ Ответы на вопросы")
 def ask_question(message):
     msg_text = (
-        "💬 Задай любой вопрос — я отвечу через Gemini 1.5 Pro.\n\n"
+        # Текст ИСПРАВЛЕН
+        "💬 Задай любой вопрос — я отвечу через Gemini 2.5 Pro.\n\n"
         "<i>Например: «расскажи про будущее AI» или «что такое МАРПОЛ?»</i>"
     )
     msg = bot.send_message(message.chat.id, msg_text, reply_markup=types.ReplyKeyboardRemove())
@@ -451,7 +452,7 @@ def answer_question(message):
         return
 
     loading = start_loading_animation(chat_id, "🤔 Думаю над ответом")
-    
+
     try:
         img_thread = threading.Thread(target=generate_image_helper, args=(chat_id, question), daemon=True)
         img_thread.start()
@@ -464,24 +465,24 @@ def answer_question(message):
             "1. (Если релевантно) 1-2 ссылки (URL) на надежные источники (статьи).\n"
             "2. (Если релевантно) 1 ссылку (URL) на YouTube видео по теме."
         )
-        
+
         response = model.generate_content(prompt)
         user_history[chat_id]["questions"].append(question)
-        
-        img_thread.join(timeout=15) 
-        
+
+        img_thread.join(timeout=15)
+
         stop_loading_animation(chat_id, loading.message_id)
-        
+
         if response.text:
             bot.send_message(chat_id, response.text, disable_web_page_preview=False)
         else:
             bot.send_message(chat_id, "❌ Не удалось получить текстовый ответ.")
-            
+
     except Exception as e:
         if loading:
             stop_loading_animation(chat_id, loading.message_id)
         bot.send_message(chat_id, f"⚠️ Ошибка при ответе: {e}")
-    
+
     bot.send_message(chat_id, "Что делаем дальше?", reply_markup=main_menu())
 
 def generate_image_helper(chat_id, prompt):
@@ -492,7 +493,7 @@ def generate_image_helper(chat_id, prompt):
             f"Создай один короткий, фотореалистичный промпт на английском для генерации изображения по теме: «{prompt}»"
         )
         img_prompt = img_prompt_gen.text.strip()
-        
+
         image_bytes = generate_image_bytes(img_prompt) # Используем ИСПРАВЛЕННУЮ функцию
         if image_bytes:
             bot.send_photo(chat_id, image_bytes)
@@ -521,9 +522,9 @@ if __name__ == "__main__":
         time.sleep(0.5)
         bot.set_webhook(url=WEBHOOK_URL)
         print(f"✅ Вебхук установлен: {WEBHOOK_URL}")
-        
+
         port = int(os.getenv("PORT", 5000))
         app.run(host="0.0.0.0", port=port)
-        
+
     except Exception as e:
         print(f"❌ Ошибка при установке вебхука или запуске Flask: {e}")
