@@ -29,14 +29,14 @@ app = Flask(__name__)
 user_data = {}
 loading = {}
 
-# ======== АНТИФРИЗ ========
+# ======== АНТИФРИЗ (щоб Render не спав) ========
 def keep_alive():
     while True:
         try:
             requests.get(WEBHOOK_HOST, timeout=10)
         except:
             pass
-        time.sleep(300)
+        time.sleep(300)  # кожні 5 хв
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
@@ -77,7 +77,7 @@ def stop_loading(cid, mid):
     except:
         pass
 
-# ======== ГОЛОВНЕ МЕНЮ ========
+# ======== ГОЛОВНЕ МЕНЮ — КНОПКИ ЗАВЖДИ ========
 def main_menu():
     k = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     k.row("Профиль")
@@ -173,7 +173,7 @@ def generate_photo(m):
         output = replicate.run(
             "black-forest-labs/flux-schnell",
             input={
-                "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting",
+                "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality",
                 "num_outputs": 1,
                 "width": 1024,
                 "height": 1024,
@@ -185,7 +185,7 @@ def generate_photo(m):
         bot.send_photo(cid, img_url, caption=f"[Camera] {prompt}", reply_markup=main_menu())
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, f"[Error] Помилка фото: {str(e)[:80]}", reply_markup=main_menu())
+        bot.send_message(cid, f"[Error] Помилка фото: {str(e)[:100]}", reply_markup=main_menu())
 
 # === ВІДЕО: STABLE VIDEO DIFFUSION ===
 def generate_video(m):
@@ -200,10 +200,11 @@ def generate_video(m):
         return
 
     try:
+        # Крок 1: Ключовий кадр
         image_output = replicate.run(
             "black-forest-labs/flux-schnell",
             input={
-                "prompt": prompt + ", cinematic keyframe, 4K, ultra realistic",
+                "prompt": prompt + ", cinematic keyframe, 4K, ultra realistic, sharp",
                 "num_outputs": 1,
                 "width": 1024,
                 "height": 576,
@@ -212,6 +213,7 @@ def generate_video(m):
         )
         image_url = image_output[0]
 
+        # Крок 2: Анімація
         video_output = replicate.run(
             "stability-ai/stable-video-diffusion-img2vid-xt",
             input={
@@ -226,14 +228,14 @@ def generate_video(m):
         bot.send_video(cid, video_url, caption=f"[Film] {prompt}", reply_markup=main_menu())
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, f"[Error] Помилка відео: {str(e)[:80]}", reply_markup=main_menu())
+        bot.send_message(cid, f"[Error] Помилка відео: {str(e)[:100]}", reply_markup=main_menu())
 
 # ======== НАЗАД ========
 @bot.message_handler(func=lambda m: m.text == "Назад")
 def back(m):
     bot.send_message(m.chat.id, "Головне меню", reply_markup=main_menu())
 
-# ======== ІНШІ ФУНКЦІЇ ========
+# ======== МОРСЬКІ НОВИНИ ========
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
@@ -251,10 +253,11 @@ def news(m):
         stop_loading(cid, load.message_id)
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
         user_data.setdefault(cid, {})["news"].append(time.strftime("%H:%M"))
-    except:
+    except Exception as e:
         stop_loading(cid, load.message_id)
         bot.send_message(cid, "[Error] GROQ тимчасово недоступний.", reply_markup=main_menu())
 
+# ======== ПРЕЗЕНТАЦІЯ ========
 @bot.message_handler(func=lambda m: m.text == "Створити презентацію")
 def create_pres(m):
     bot.send_message(m.chat.id, "Тема презентації?\nПриклад: «Перемога ЗСУ на морі»", reply_markup=types.ReplyKeyboardRemove())
@@ -288,10 +291,11 @@ def gen_pres(m):
         buffer.seek(0)
         stop_loading(cid, load.message_id)
         bot.send_document(cid, buffer, caption=topic, filename=f"{topic[:50]}.pdf", reply_markup=main_menu())
-    except:
+    except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message("[Error] Помилка створення PDF.", reply_markup=main_menu())
+        bot.send_message(cid, "[Error] Помилка створення PDF.", reply_markup=main_menu())
 
+# ======== ПИТАННЯ ========
 @bot.message_handler(func=lambda m: m.text == "Відповіді на питання")
 def ask_q(m):
     bot.send_message(m.chat.id, "Задай питання:\nПриклад: «Коли ЗСУ звільнять Крим?»", reply_markup=types.ReplyKeyboardRemove())
@@ -314,11 +318,11 @@ def answer_q(m):
         )
         stop_loading(cid, load.message_id)
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
-    except:
+    except Exception as e:
         stop_loading(cid, load.message_id)
         bot.send_message(cid, "[Error] GROQ перевантажено.", reply_markup=main_menu())
 
-# ======== FLASK ========
+# ======== FLASK WEBHOOK ========
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     if request.headers.get("content-type") == "application/json":
@@ -327,9 +331,14 @@ def webhook():
         return "OK", 200
     return "", 400
 
-# ======== ЗАПУСК ========
+# ======== ЗАПУСК (GUNICORN — БЕЗ WARNING) ========
 if __name__ == "__main__":
     print("Запуск бота...")
     setup_webhook()
     print("Бот запущено! Слава ЗСУ!")
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    
+    # Render + Gunicorn = production
+    if os.getenv("RENDER"):
+        pass  # gunicorn запуститься автоматично
+    else:
+        app.run(host="0.0.0.0", port=5000, debug=False)
