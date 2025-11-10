@@ -42,9 +42,9 @@ threading.Thread(target=keep_alive, daemon=True).start()
 
 # ======== АНІМАЦІЯ ЗАВАНТАЖЕННЯ ========
 def start_loading(cid, text="Генерую"):
-    msg = bot.send_message(cid, f"{text} ⛵")
+    msg = bot.send_message(cid, f"{text} [Ship]")
     loading[cid] = msg.message_id
-    anim = ["⛵", "⚓", "🌊", "🌀", "🌪", "🚢", "🌅", "🛳"]
+    anim = ["[Ship]", "[Anchor]", "[Wave]", "[Swirl]", "[Tornado]", "[Ship]", "[Sunset]", "[Cruise]"]
     def animate():
         for _ in range(60):
             for e in anim:
@@ -88,7 +88,7 @@ def start(m):
         f"<b>Капитан @Tem4ik4751 на мостике!</b>\n"
         f"ID: <code>{uid}</code>\n"
         "Бот работает 24/7 — <b>Слава ЗСУ!</b>\n\n"
-        "Выбери функцию ⬇️",
+        "Выбери функцию [Down Arrow]",
         reply_markup=main_menu())
 
 # ======== ПРОФІЛЬ + ІСТОРІЯ ========
@@ -111,7 +111,7 @@ ID: <code>1474031301</code>
 Username: <b>@Artem1488962</b>
 Дата: <b>2025-11-09</b>
 <b>Статистика:</b>
-❓ Питань: {len(u['questions'])}
+[Question] Питань: {len(u['questions'])}
 Фото: {len(u['media'])}
 Відео: {len(u['video'])}
 Презентацій: {len(u['pres'])}
@@ -165,7 +165,7 @@ def generate_photo(m):
         ).json()
         img_url = r["data"][0]["url"]
         stop_loading(cid, load.message_id)
-        bot.send_photo(cid, img_url, caption=f"📸 {prompt}")
+        bot.send_photo(cid, img_url, caption=f"[Camera] {prompt}")
     except Exception as e:
         stop_loading(cid, load.message_id)
         bot.send_message(cid, "Помилка генерації. Спробуй ще раз.")
@@ -194,7 +194,7 @@ def generate_video(m):
             if status["data"]["status"] == "completed":
                 video_url = status["data"]["video_url"]
                 stop_loading(cid, load.message_id)
-                bot.send_video(cid, video_url, caption=f"🎬 {prompt}")
+                bot.send_video(cid, video_url, caption=f"[Film] {prompt}")
                 return
         stop_loading(cid, load.message_id)
         bot.send_message(cid, "Відео ще обробляється, скоро прийде!")
@@ -291,7 +291,7 @@ def webhook():
         update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
         bot.process_new_updates([update])
         return "OK", 200
-    return, 400
+    return "", 400  # ← ИСПРАВЛЕНО: запятая → пробел + кавычки
 
 # ======== ЗАПУСК ========
 if __name__ == "__main__":
