@@ -130,7 +130,7 @@ def history(c):
         text += f"{i}. <code>{x[:50]}{'...' if len(x)>50 else ''}</code>\n"
     bot.send_message(cid, text)
 
-# ======== ГЕНЕРАТОР МЕДІА — HTTP KLING З ДОКУМЕНТАЦІЇ ========
+# ======== ГЕНЕРАТОР МЕДІА — HTTP KLING API ========
 @bot.message_handler(func=lambda m: m.text == "Генератор Медіа")
 def media_menu(m):
     bot.send_message(m.chat.id, "Выбирай оружие, капитан!")
@@ -178,7 +178,7 @@ def generate_video(m):
             headers=headers,
             json={
                 "prompt": prompt + ", cinematic, 4K, ultra realistic, smooth motion",
-                "negative_prompt": "blurry, low quality, distortion",  # З доків для кращої якості
+                "negative_prompt": "blurry, low quality, distortion",
                 "duration": 10,
                 "aspect_ratio": "16:9"
             }
