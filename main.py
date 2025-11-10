@@ -41,7 +41,7 @@ def keep_alive():
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 💤 Ping → Render OK")
         except Exception as e:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⚠️ Ping Error: {e}")
-        time.sleep(600)
+        time.sleep(600) # 10 минут
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
@@ -81,12 +81,11 @@ def stop_loading_animation(chat_id, message_id):
         print(f"Ошибка остановки анимации: {e}")
 
 # -------------------------------------------------------------------
-# ✅ НОВАЯ ФУНКЦИЯ "НАРЕЗКИ" СООБЩЕНИЙ
+# ✅ ФУНКЦИЯ "НАРЕЗКИ" СООБЩЕНИЙ (из прошлого раза)
 # -------------------------------------------------------------------
 def send_long_message(chat_id, text, **kwargs):
     """
     Отправляет длинное сообщение, разбивая его на части по 4096 символов.
-    **kwargs будут переданы в bot.send_message (например, parse_mode, disable_web_page_preview).
     """
     if len(text) <= 4096:
         bot.send_message(chat_id, text, **kwargs)
@@ -111,7 +110,7 @@ def send_long_message(chat_id, text, **kwargs):
 
     for part in parts:
         bot.send_message(chat_id, part, **kwargs)
-        time.sleep(0.5) # Небольшая задержка, чтобы не спамить API
+        time.sleep(0.5) 
 
 # ========  menus Главное меню ========
 def main_menu():
@@ -125,20 +124,22 @@ def main_menu():
 # ======== /start ========
 @bot.message_handler(commands=["start"])
 def start(message):
-    chat_id = message.chat.id
+    chat_id = message.chat_id
     user_history.setdefault(chat_id, {
         "questions": [],
         "media": [],
         "presentations": [],
         "news": []
     })
+    # -------------------------------------------------------------------
+    # ✅ ИЗМЕНЕНИЕ ДЛЯ ТЕСТА
+    # -------------------------------------------------------------------
     bot.send_message(
         chat_id,
-        f"Привет, {message.from_user.first_name}! 👋\nЯ твой ассистент на базе Gemini. Выбери опцию:",
+        f"--- DEBUG-TEST-1 --- Привет, {message.from_user.first_name}! 👋\nЯ твой ассистент на базе Gemini. Выбери опцию:", 
         reply_markup=main_menu()
     )
 
-# ... (Код Профиля и Медиа Меню остается без изменений) ...
 # ======== 👤 Профиль ========
 @bot.message_handler(func=lambda m: m.text == "👤 Профиль")
 def profile(message):
@@ -176,9 +177,8 @@ def profile(message):
 def handle_history_callback(call):
     chat_id = call.message.chat.id
     category = call.data.split('_')[1]
-
     hist_list = user_history.get(chat_id, {}).get(category, [])
-
+    
     if not hist_list:
         bot.answer_callback_query(call.id, "📭 В этой категории история пуста.", show_alert=True)
         return
@@ -190,10 +190,9 @@ def handle_history_callback(call):
         "news": "⚓ Просмотренные новости (по датам):"
     }
     title = titles.get(category, "📜 Твоя история:")
-
     formatted_list = [f"• <code>{item}</code>" for item in hist_list[-10:]]
     text = f"<b>{title}</b> (последние 10):\n\n" + "\n".join(formatted_list)
-
+    
     bot.answer_callback_query(call.id)
     bot.send_message(chat_id, text)
 
@@ -234,7 +233,6 @@ def generate_image(message):
 
     try:
         image_bytes = generate_image_bytes(prompt) 
-
         if not image_bytes:
             raise ValueError("Не удалось сгенерировать изображение (пустой ответ от API).")
 
@@ -254,7 +252,7 @@ def generate_image(message):
 
     bot.send_message(chat_id, "Что делаем дальше?", reply_markup=main_menu())
 
-# (Функция generate_image_bytes остается без изменений)
+# (Функция generate_image_bytes)
 def generate_image_bytes(prompt: str) -> bytes | None:
     """Генерация изображения через Imagen (официальный endpoint v1)."""
     try:
@@ -306,7 +304,6 @@ def maritime_news(message):
         )
 
         response = model.generate_content(prompt)
-
         stop_loading_animation(chat_id, loading.message_id)
 
         if response.text:
@@ -473,7 +470,7 @@ def generate_presentation(message):
 @bot.message_handler(func=lambda m: m.text == "❓ Ответы на вопросы")
 def ask_question(message):
     msg_text = (
-        "💬 Задай любой вопрос — я отвечу через Gemini 2.5 Pro.\n\n"
+        "💬 Задай любой вопрос — я отвечу через Gemini 2.5 Pro.\n\n" 
         "<i>Например: «расскажи про будущее AI» или «что такое МАРПОЛ?»</i>"
     )
     msg = bot.send_message(message.chat.id, msg_text, reply_markup=types.ReplyKeyboardRemove())
