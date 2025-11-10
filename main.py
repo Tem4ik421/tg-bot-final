@@ -2,6 +2,8 @@
 import os
 import time
 import threading
+import requests
+import json
 from flask import Flask, request
 import telebot
 from telebot import types
@@ -9,7 +11,6 @@ from datetime import datetime
 from fpdf import FPDF
 from io import BytesIO
 from groq import Groq
-from klingai import KlingAI  # ← ОФІЦІЙНИЙ SDK
 
 # ======== КОНФІГ ========
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -19,9 +20,8 @@ WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# Ініціалізація
+# GROQ для тексту
 groq_client = Groq(api_key=GROQ_API_KEY)
-kling = KlingAI(api_key=KLING_API_KEY)  # ← SDK Kling AI
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 app = Flask(__name__)
 
@@ -64,7 +64,7 @@ def main_menu():
     k.row("Створити презентацію", "Відповіді на питання")
     return k
 
-# ======== /start ========
+# ======== /start — ТВОЄ ПОВІДОМЛЕННЯ ========
 @bot.message_handler(commands=["start"])
 def start(m):
     cid = m.chat.id
@@ -80,12 +80,10 @@ def start(m):
         }
 
     bot.send_message(cid,
-        "<b>КАПІТАН @Artem1488962 НА МОСТИКУ!</b>\n\n"
-        "<code>1474031301</code> • <b>2025-11-09</b>\n"
-        "Фото: <b>2 сек</b> • Відео: <b>18 сек</b>\n"
-        "<b>Відео як Sora ×10 — Kling AI Pro</b>\n"
-        "Бот працює 24/7 — <b>Слава ЗСУ!</b>\n\n"
-        "Вибирай зброю, капітане!",
+        f"<b>Капитан @Tem4ik4751 на мостике!</b>\n"
+        f"ID: <code>{uid}</code>\n"
+        "Бот работает 24/7 — <b>Слава ЗСУ!</b>\n\n"
+        "Выбери функцию ⬇️",
         reply_markup=main_menu())
 
 # ======== ПРОФІЛЬ ========
@@ -132,63 +130,75 @@ def history(c):
         text += f"{i}. <code>{x[:50]}{'...' if len(x)>50 else ''}</code>\n"
     bot.send_message(cid, text)
 
-# ======== ГЕНЕРАТОР МЕДІА — KLING AI SDK ========
+# ======== ГЕНЕРАТОР МЕДІА — HTTP KLING З ДОКУМЕНТАЦІЇ ========
 @bot.message_handler(func=lambda m: m.text == "Генератор Медіа")
 def media_menu(m):
+    bot.send_message(m.chat.id, "Выбирай оружие, капитан!")
     k = types.ReplyKeyboardMarkup(resize_keyboard=True)
     k.row("Фото", "Відео")
     k.row("Назад")
-    bot.send_message(m.chat.id, "Що створюємо?", reply_markup=k)
+    bot.send_message(m.chat.id, reply_markup=k)
 
 @bot.message_handler(func=lambda m: m.text in ["Фото", "Відео"])
 def ask_prompt(m):
-    example = "ЗСУ піднімають прапор над Севастополем, фотореалізм 8K" if "Фото" in m.text else "корабель ЗСУ атакує ЧФ РФ, 15 сек, кінематограф"
+    media_type = "фото" if "Фото" in m.text else "відео"
+    example = "ЗСУ на палубе, закат, фотореализм" if "Фото" in m.text else "ЗСУ на палубе, закат, 10 сек"
     bot.send_message(m.chat.id,
-        f"Опиши {m.text.lower()}:\n\n"
-        f"Приклад: <i>«{example}»</i>",
+        f"Опиши {media_type}:\n"
+        f"Пример: «{example}»",
         reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video)
 
 def generate_photo(m):
     cid = m.chat.id
-    prompt = m.text + ", photorealistic, 8K, ultra detailed"
+    prompt = m.text
     user_data[cid]["media"].append(prompt)
     load = start_loading(cid, "Генерую фото")
+    headers = {"Authorization": f"Bearer {KLING_API_KEY}", "Content-Type": "application/json"}
     try:
-        result = kling.image.generate(prompt=prompt, n=1)
-        img_url = result.data[0].url
+        r = requests.post("https://api.klingai.com/v1/images/generations",
+            headers=headers,
+            json={"prompt": prompt + ", photorealistic, 8K, ultra detailed", "n": 1, "size": "1024x1024"}
+        ).json()
+        img_url = r["data"][0]["url"]
         stop_loading(cid, load.message_id)
-        bot.send_photo(cid, img_url, caption=prompt)
+        bot.send_photo(cid, img_url, caption=f"📸 {prompt}")
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, f"Помилка Kling: {str(e)[:100]}\nСпробуй через 20 сек.")
+        bot.send_message(cid, f"GROQ перегружен\nПопробуй через 20 сек")
 
 def generate_video(m):
     cid = m.chat.id
-    prompt = m.text + ", cinematic, 4K, ultra realistic, smooth motion"
+    prompt = m.text
     user_data[cid]["video"].append(prompt)
-    load = start_loading(cid, "Створюю відео як Sora ×10")
+    load = start_loading(cid, "Створюю відео")
+    headers = {"Authorization": f"Bearer {KLING_API_KEY}", "Content-Type": "application/json"}
     try:
-        task = kling.video.generate(
-            prompt=prompt,
-            duration=15,
-            aspect_ratio="16:9"
-        )
-        task_id = task.data.task_id
+        r = requests.post("https://api.klingai.com/v1/videos/generations",
+            headers=headers,
+            json={
+                "prompt": prompt + ", cinematic, 4K, ultra realistic, smooth motion",
+                "negative_prompt": "blurry, low quality, distortion",  # З доків для кращої якості
+                "duration": 10,
+                "aspect_ratio": "16:9"
+            }
+        ).json()
+        task_id = r["data"]["task_id"]
 
         for _ in range(50):
             time.sleep(6)
-            status = kling.video.get_task(task_id)
-            if status.data.status == "completed":
-                video_url = status.data.video_url
+            status = requests.get(f"https://api.klingai.com/v1/videos/tasks/{task_id}",
+                headers=headers).json()
+            if status["data"]["status"] == "completed":
+                video_url = status["data"]["video_url"]
                 stop_loading(cid, load.message_id)
-                bot.send_video(cid, video_url, caption=prompt)
+                bot.send_video(cid, video_url, caption=f"🎬 {prompt}")
                 return
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Відео в обробці (до 2 хв). Скоро прийде!")
+        bot.send_message(cid, "Видео в обработке, скоро пришлю!")
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, f"Помилка Kling: {str(e)[:100]}")
+        bot.send_message(cid, f"Ошибка: {str(e)[:100]}")
 
 # ======== МОРСЬКІ НОВИНИ (GROQ) ========
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
