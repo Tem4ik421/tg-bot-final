@@ -22,7 +22,7 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 # Модели (ИСПРАВЛЕНО НА "КРУТЫЕ")
 MODEL_TEXT = "models/gemini-2.5-pro"  # Самая крутая модель текста
-MODEL_IMAGE = "models/imagen-3"       # Самая крутая модель фото (не -fast)
+MODEL_IMAGE = "models/imagen-3"       # Самая крутая модель фото
 
 genai.configure(api_key=GEMINI_API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
@@ -196,7 +196,7 @@ def generate_image(message):
         back_to_main_menu(message)
         return
 
-    loading = start_loading_animation(chat_id, "🔄 Генерирую фото через Imagen")
+    loading = start_loading_animation(chat_id, "🔄 Генерирую фото через Imagen 3")
 
     try:
         image_bytes = generate_image_bytes(prompt) 
@@ -286,6 +286,9 @@ def maritime_news(message):
     except Exception as e:
         if loading:
             stop_loading_animation(chat_id, loading.message_id)
+        # -------------------------------------------------------------------
+        # ✅ ИСПРАВЛЕНИЕ #2 (Показываем настоящую ошибку)
+        # -------------------------------------------------------------------
         bot.send_message(chat_id, f"⚠️ Ошибка при получении новостей: {e}") 
 
 # ======== 🎨 Презентации ========
@@ -424,6 +427,9 @@ def generate_presentation(message):
     except Exception as e:
         if loading_msg:
             stop_loading_animation(chat_id, loading_msg.message_id)
+        # -------------------------------------------------------------------
+        # ✅ ИСПРАВЛЕНИЕ #3 (Показываем настоящую ошибку)
+        # -------------------------------------------------------------------
         bot.send_message(chat_id, f"⚠️ Ошибка при создании презентации: {e}")
 
     bot.send_message(chat_id, "Что делаем дальше?", reply_markup=main_menu())
@@ -478,7 +484,7 @@ def answer_question(message):
         if loading:
             stop_loading_animation(chat_id, loading.message_id)
         # -------------------------------------------------------------------
-        # ✅ ИСПРАВЛЕНИЕ #2 (Показываем настоящую ошибку)
+        # ✅ ИСПРАВЛЕНИЕ #4 (САМОЕ ВАЖНОЕ - Показываем настоящую ошибку)
         # -------------------------------------------------------------------
         bot.send_message(chat_id, f"⚠️ Ошибка при ответе: {e}")
 
