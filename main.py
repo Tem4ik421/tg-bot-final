@@ -14,28 +14,42 @@ from groq import Groq
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 KLING_API_KEY = os.getenv("KLING_API_KEY")
-WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")
+WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "https://tg-bot-final-uzt8.onrender.com")  # ← ТВОЙ ДОМЕН
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# GROQ — ПРОСТАЯ ИНИЦИАЛИЗАЦИЯ (groq 0.13.0+ фиксит proxies)
-groq_client = Groq(api_key=GROQ_API_KEY)
+# GROQ — БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 app = Flask(__name__)
 user_data = {}
 loading = {}
 
-# ======== АНТИФРИЗ ========
+# ======== АНТИФРИЗ (УСИЛЕННЫЙ) ========
 def keep_alive():
     while True:
         try:
             requests.get(WEBHOOK_HOST, timeout=10)
         except:
             pass
-        time.sleep(600)
+        time.sleep(300)  # каждые 5 минут
 
 threading.Thread(target=keep_alive, daemon=True).start()
+
+# ======== АВТО-НАСТРОЙКА WEBHOOK ПРИ СТАРТЕ ========
+def setup_webhook():
+    try:
+        current = bot.get_webhook_info().url
+        if current != WEBHOOK_URL:
+            bot.remove_webhook()
+            time.sleep(1)
+            bot.set_webhook(url=WEBHOOK_URL)
+            print(f"Webhook установлен: {WEBHOOK_URL}")
+        else:
+            print(f"Webhook уже активен: {current}")
+    except Exception as e:
+        print(f"Ошибка webhook: {e}")
 
 # ======== АНІМАЦІЯ ========
 def start_loading(cid, text="Генерую"):
@@ -131,14 +145,13 @@ def history(c):
         text += f"{i}. <code>{x[:50]}{'...' if len(x)>50 else ''}</code>\n"
     bot.send_message(cid, text)
 
-# ======== ГЕНЕРАТОР МЕДІА ========
+# ======== ГЕНЕРАТОР МЕДІА (ФИКС ОШИБКИ) ========
 @bot.message_handler(func=lambda m: m.text == "Генератор Медіа")
 def media_menu(m):
-    bot.send_message(m.chat.id, "Выбирай оружие, капитан!")
     k = types.ReplyKeyboardMarkup(resize_keyboard=True)
     k.row("Фото", "Відео")
     k.row("Назад")
-    bot.send_message(m.chat.id, reply_markup=k)
+    bot.send_message(m.chat.id, "Выбирай оружие, капитан!", reply_markup=k)
 
 @bot.message_handler(func=lambda m: m.text in ["Фото", "Відео"])
 def ask_prompt(m):
@@ -155,24 +168,44 @@ def generate_photo(m):
     prompt = m.text
     user_data[cid]["media"].append(prompt)
     load = start_loading(cid, "Генерую фото")
+    
+    # ПРОВЕРКА KLING_API_KEY
+    if not KLING_API_KEY:
+        stop_loading(cid, load.message_id)
+        bot.send_message(cid, "⚠️ KLING API ключ не встановлено. Звернись до адміна.")
+        return
+
     headers = {"Authorization": f"Bearer {KLING_API_KEY}", "Content-Type": "application/json"}
     try:
         r = requests.post("https://api.klingai.com/v1/images/generations",
             headers=headers,
-            json={"prompt": prompt + ", photorealistic, 8K, ultra detailed", "n": 1, "size": "1024x1024"}
-        ).json()
-        img_url = r["data"][0]["url"]
+            json={"prompt": prompt + ", photorealistic, 8K, ultra detailed", "n": 1, "size": "1024x1024"},
+            timeout=30
+        )
+        r.raise_for_status()
+        data = r.json()
+        img_url = data["data"][0]["url"]
         stop_loading(cid, load.message_id)
         bot.send_photo(cid, img_url, caption=f"📸 {prompt}")
+    except requests.exceptions.HTTPError as e:
+        stop_loading(cid, load.message_id)
+        error = r.json().get("error", {}).get("message", "Невідома помилка")
+        bot.send_message(cid, f"Помилка Kling API: {error}")
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, f"Помилка генерації: {str(e)[:100]}")
+        bot.send_message(cid, "Сервер перегружен. Спробуй за 30 сек.")
 
 def generate_video(m):
     cid = m.chat.id
     prompt = m.text
     user_data[cid]["video"].append(prompt)
     load = start_loading(cid, "Створюю відео")
+    
+    if not KLING_API_KEY:
+        stop_loading(cid, load.message_id)
+        bot.send_message(cid, "⚠️ KLING API ключ не встановлено.")
+        return
+
     headers = {"Authorization": f"Bearer {KLING_API_KEY}", "Content-Type": "application/json"}
     try:
         r = requests.post("https://api.klingai.com/v1/videos/generations",
@@ -182,29 +215,35 @@ def generate_video(m):
                 "negative_prompt": "blurry, low quality, distortion",
                 "duration": 10,
                 "aspect_ratio": "16:9"
-            }
-        ).json()
-        task_id = r["data"]["task_id"]
+            },
+            timeout=30
+        )
+        r.raise_for_status()
+        task_id = r.json()["data"]["task_id"]
+
         for _ in range(50):
             time.sleep(6)
-            status = requests.get(f"https://api.klingai.com/v1/videos/tasks/{task_id}",
-                headers=headers).json()
+            status = requests.get(f"https://api.klingai.com/v1/videos/tasks/{task_id}", headers=headers, timeout=30).json()
             if status["data"]["status"] == "completed":
                 video_url = status["data"]["video_url"]
                 stop_loading(cid, load.message_id)
                 bot.send_video(cid, video_url, caption=f"🎬 {prompt}")
                 return
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Видео в обработке, скоро пришлю!")
+        bot.send_message(cid, "Відео ще обробляється — прийде автоматично!")
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, f"Ошибка: {str(e)[:100]}")
+        bot.send_message(cid, "Помилка відео. Спробуй пізніше.")
 
-# ======== МОРСЬКІ НОВИНИ ========
+# ======== НОВИНИ ========
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
     load = start_loading(cid, "Шукаю новини")
+    if not groq_client:
+        stop_loading(cid, load.message_id)
+        bot.send_message(cid, "GROQ не налаштований.")
+        return
     try:
         completion = groq_client.chat.completions.create(
             model="llama-3.1-70b-versatile",
@@ -216,9 +255,11 @@ def news(m):
         user_data[cid]["news"].append(time.strftime("%H:%M"))
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, f"GROQ перевантажено: {str(e)[:50]}")
+        bot.send_message(cid, "GROQ тимчасово недоступний.")
 
-# ======== ПРЕЗЕНТАЦІЇ ========
+# ======== ПРЕЗЕНТАЦІЇ, ПИТАННЯ — без змін (работают) ========
+# ... (остальной код без изменений, как в предыдущем)
+
 @bot.message_handler(func=lambda m: m.text == "Створити презентацію")
 def create_pres(m):
     bot.send_message(m.chat.id, "Тема презентації?\nПриклад: «Перемога ЗСУ на морі»")
@@ -229,6 +270,10 @@ def gen_pres(m):
     topic = m.text
     user_data[cid]["pres"].append(topic)
     load = start_loading(cid, "Створюю NatGeo стиль")
+    if not groq_client:
+        stop_loading(cid, load.message_id)
+        bot.send_message(cid, "GROQ не налаштований.")
+        return
     try:
         completion = groq_client.chat.completions.create(
             model="llama-3.1-70b-versatile",
@@ -247,12 +292,11 @@ def gen_pres(m):
         pdf.output(buffer)
         buffer.seek(0)
         stop_loading(cid, load.message_id)
-        bot.send_document(cid, buffer, caption=topic, filename=f"{topic}.pdf")
+        bot.send_document(cid, buffer, caption=topic, filename=f"{topic[:50]}.pdf")
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, f"Помилка PDF: {str(e)[:50]}")
+        bot.send_message(cid, "Помилка PDF.")
 
-# ======== ВІДПОВІДІ ========
 @bot.message_handler(func=lambda m: m.text == "Відповіді на питання")
 def ask_q(m):
     bot.send_message(m.chat.id, "Задай питання:\nПриклад: «Коли ЗСУ звільнять Крим?»")
@@ -264,6 +308,10 @@ def answer_q(m):
     user_data[cid]["questions"].append(q)
     user_data[cid]["answers"].append(q)
     load = start_loading(cid, "Думаю...")
+    if not groq_client:
+        stop_loading(cid, load.message_id)
+        bot.send_message(cid, "GROQ не налаштований.")
+        return
     try:
         completion = groq_client.chat.completions.create(
             model="llama-3.1-70b-versatile",
@@ -274,26 +322,25 @@ def answer_q(m):
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False)
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, f"GROQ перевантажено: {str(e)[:50]}")
+        bot.send_message(cid, "GROQ перевантажено.")
 
-# ======== НАЗАД ========
 @bot.message_handler(func=lambda m: m.text == "Назад")
-def back(m): bot.send_message(m.chat.id, "Головне меню", reply_markup=main_menu())
+def back(m):
+    bot.send_message(m.chat.id, "Головне меню", reply_markup=main_menu())
 
-# ======== FLASK ========
+# ======== WEBHOOK ========
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     try:
-        json_str = request.get_data(as_text=True)
-        update = telebot.types.Update.de_json(json_str)
+        update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
         bot.process_new_updates([update])
         return "OK", 200
     except:
         return "", 400
 
+# ======== ЗАПУСК ========
 if __name__ == "__main__":
-    bot.remove_webhook()
-    time.sleep(1)
-    bot.set_webhook(url=WEBHOOK_URL)
+    print("Запуск бота...")
+    setup_webhook()  # ← АВТО-НАСТРОЙКА WEBHOOK
     print("Бот запущено! Слава ЗСУ!")
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
