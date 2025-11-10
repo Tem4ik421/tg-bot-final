@@ -40,7 +40,7 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# ======== АВТО-WEBHOOK ========
+# ======== АВТО-WEBHOOK (ВИКЛИКАЄТЬСЯ ПРИ СТАРТІ) ========
 def setup_webhook():
     try:
         info = bot.get_webhook_info()
@@ -200,7 +200,6 @@ def generate_video(m):
         return
 
     try:
-        # Крок 1: Ключовий кадр
         image_output = replicate.run(
             "black-forest-labs/flux-schnell",
             input={
@@ -213,7 +212,6 @@ def generate_video(m):
         )
         image_url = image_output[0]
 
-        # Крок 2: Анімація
         video_output = replicate.run(
             "stability-ai/stable-video-diffusion-img2vid-xt",
             input={
@@ -331,14 +329,6 @@ def webhook():
         return "OK", 200
     return "", 400
 
-# ======== ЗАПУСК (GUNICORN — БЕЗ WARNING) ========
-if __name__ == "__main__":
-    print("Запуск бота...")
-    setup_webhook()
-    print("Бот запущено! Слава ЗСУ!")
-    
-    # Render + Gunicorn = production
-    if os.getenv("RENDER"):
-        pass  # gunicorn запуститься автоматично
-    else:
-        app.run(host="0.0.0.0", port=5000, debug=False)
+# ======== АВТО-WEBHOOK + СТАРТ (ПРИ ІМПОРТІ) ========
+setup_webhook()
+print("Бот запущено! Слава ЗСУ!")
