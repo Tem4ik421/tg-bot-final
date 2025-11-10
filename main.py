@@ -20,9 +20,9 @@ WEBHOOK_HOST = os.getenv("WEBHOOK_HOST") or "https://tg-bot-final-1.onrender.com
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# Модели (ИСПРАВЛЕНО НА "КРУТЫЕ")
-MODEL_TEXT = "models/gemini-2.5-pro"  # Самая крутая модель текста
-MODEL_IMAGE = "models/imagen-3"       # Самая крутая модель фото
+# Модели
+MODEL_TEXT = "models/gemini-2.5-pro"
+MODEL_IMAGE = "models/imagen-3"
 
 genai.configure(api_key=GEMINI_API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
@@ -41,7 +41,7 @@ def keep_alive():
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 💤 Ping → Render OK")
         except Exception as e:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⚠️ Ping Error: {e}")
-        time.sleep(600) # 10 минут
+        time.sleep(600)
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
@@ -80,6 +80,39 @@ def stop_loading_animation(chat_id, message_id):
     except Exception as e:
         print(f"Ошибка остановки анимации: {e}")
 
+# -------------------------------------------------------------------
+# ✅ НОВАЯ ФУНКЦИЯ "НАРЕЗКИ" СООБЩЕНИЙ
+# -------------------------------------------------------------------
+def send_long_message(chat_id, text, **kwargs):
+    """
+    Отправляет длинное сообщение, разбивая его на части по 4096 символов.
+    **kwargs будут переданы в bot.send_message (например, parse_mode, disable_web_page_preview).
+    """
+    if len(text) <= 4096:
+        bot.send_message(chat_id, text, **kwargs)
+        return
+
+    parts = []
+    while len(text) > 0:
+        if len(text) > 4096:
+            part = text[:4096]
+            # Пытаемся найти последний перенос строки, чтобы не рвать слово
+            last_newline = part.rfind('\n')
+            if last_newline != -1:
+                parts.append(text[:last_newline])
+                text = text[last_newline + 1:]
+            else:
+                # Если переносов нет, рвем по 4096
+                parts.append(part)
+                text = text[4096:]
+        else:
+            parts.append(text)
+            text = ""
+
+    for part in parts:
+        bot.send_message(chat_id, part, **kwargs)
+        time.sleep(0.5) # Небольшая задержка, чтобы не спамить API
+
 # ========  menus Главное меню ========
 def main_menu():
     """Возвращает Reply-клавиатуру главного меню."""
@@ -105,6 +138,7 @@ def start(message):
         reply_markup=main_menu()
     )
 
+# ... (Код Профиля и Медиа Меню остается без изменений) ...
 # ======== 👤 Профиль ========
 @bot.message_handler(func=lambda m: m.text == "👤 Профиль")
 def profile(message):
@@ -214,15 +248,13 @@ def generate_image(message):
         if loading:
             stop_loading_animation(chat_id, loading.message_id)
         # -------------------------------------------------------------------
-        # ✅ ИСПРАВЛЕНИЕ #1 (Показываем настоящую ошибку)
+        # ✅ ИСПРАВЛЕНИЕ #1 (Обрезаем ошибку)
         # -------------------------------------------------------------------
-        bot.send_message(chat_id, f"❌ Ошибка при генерации изображения: {e}")
+        bot.send_message(chat_id, f"❌ Ошибка при генерации изображения: {str(e)[:1000]}")
 
     bot.send_message(chat_id, "Что делаем дальше?", reply_markup=main_menu())
 
-# -------------------------------------------------------------------
-# (Функция для Imagen)
-# -------------------------------------------------------------------
+# (Функция generate_image_bytes остается без изменений)
 def generate_image_bytes(prompt: str) -> bytes | None:
     """Генерация изображения через Imagen (официальный endpoint v1)."""
     try:
@@ -278,8 +310,10 @@ def maritime_news(message):
         stop_loading_animation(chat_id, loading.message_id)
 
         if response.text:
-            bot.send_message(chat_id, response.text, disable_web_page_preview=True)
-            user_history[chat_id]["news"].append(datetime.now().strftime('%Y-%m-%d %H:%M'))
+            # -------------------------------------------------------------------
+            # ✅ ИСПРАВЛЕНИЕ #2 (Используем "нарезку")
+            # -------------------------------------------------------------------
+            send_long_message(chat_id, response.text, disable_web_page_preview=True)
         else:
             bot.send_message(chat_id, "❌ Не удалось получить новости.")
 
@@ -287,9 +321,9 @@ def maritime_news(message):
         if loading:
             stop_loading_animation(chat_id, loading.message_id)
         # -------------------------------------------------------------------
-        # ✅ ИСПРАВЛЕНИЕ #2 (Показываем настоящую ошибку)
+        # ✅ ИСПРАВЛЕНИЕ #3 (Обрезаем ошибку)
         # -------------------------------------------------------------------
-        bot.send_message(chat_id, f"⚠️ Ошибка при получении новостей: {e}") 
+        bot.send_message(chat_id, f"⚠️ Ошибка при получении новостей: {str(e)[:1000]}") 
 
 # ======== 🎨 Презентации ========
 @bot.message_handler(func=lambda m: m.text == "🎨 Создать презентацию")
@@ -428,9 +462,9 @@ def generate_presentation(message):
         if loading_msg:
             stop_loading_animation(chat_id, loading_msg.message_id)
         # -------------------------------------------------------------------
-        # ✅ ИСПРАВЛЕНИЕ #3 (Показываем настоящую ошибку)
+        # ✅ ИСПРАВЛЕНИЕ #4 (Обрезаем ошибку)
         # -------------------------------------------------------------------
-        bot.send_message(chat_id, f"⚠️ Ошибка при создании презентации: {e}")
+        bot.send_message(chat_id, f"⚠️ Ошибка при создании презентации: {str(e)[:1000]}")
 
     bot.send_message(chat_id, "Что делаем дальше?", reply_markup=main_menu())
 
@@ -439,7 +473,7 @@ def generate_presentation(message):
 @bot.message_handler(func=lambda m: m.text == "❓ Ответы на вопросы")
 def ask_question(message):
     msg_text = (
-        "💬 Задай любой вопрос — я отвечу через Gemini 2.5 Pro.\n\n" # <-- Текст обновлен
+        "💬 Задай любой вопрос — я отвечу через Gemini 2.5 Pro.\n\n"
         "<i>Например: «расскажи про будущее AI» или «что такое МАРПОЛ?»</i>"
     )
     msg = bot.send_message(message.chat.id, msg_text, reply_markup=types.ReplyKeyboardRemove())
@@ -476,7 +510,10 @@ def answer_question(message):
         stop_loading_animation(chat_id, loading.message_id)
 
         if response.text:
-            bot.send_message(chat_id, response.text, disable_web_page_preview=False)
+            # -------------------------------------------------------------------
+            # ✅ ИСПРАВЛЕНИЕ #5 (Используем "нарезку")
+            # -------------------------------------------------------------------
+            send_long_message(chat_id, response.text, disable_web_page_preview=False)
         else:
             bot.send_message(chat_id, "❌ Не удалось получить текстовый ответ.")
 
@@ -484,9 +521,9 @@ def answer_question(message):
         if loading:
             stop_loading_animation(chat_id, loading.message_id)
         # -------------------------------------------------------------------
-        # ✅ ИСПРАВЛЕНИЕ #4 (САМОЕ ВАЖНОЕ - Показываем настоящую ошибку)
+        # ✅ ИСПРАВЛЕНИЕ #6 (Обрезаем ошибку)
         # -------------------------------------------------------------------
-        bot.send_message(chat_id, f"⚠️ Ошибка при ответе: {e}")
+        bot.send_message(chat_id, f"⚠️ Ошибка при ответе: {str(e)[:1000]}")
 
     bot.send_message(chat_id, "Что делаем дальше?", reply_markup=main_menu())
 
