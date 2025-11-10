@@ -77,7 +77,7 @@ def stop_loading(cid, mid):
     except:
         pass
 
-# ======== ГОЛОВНЕ МЕНЮ — КНОПКИ ЗАВЖДИ! ========
+# ======== ГОЛОВНЕ МЕНЮ ========
 def main_menu():
     k = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     k.row("Профиль")
@@ -122,7 +122,7 @@ ID: <code>1474031301</code>
 Презентацій: {len(u.get('pres', []))}
 Новин: {len(u.get('news', []))}
 Відповідей: {len(u.get('answers', []))}
-    """.strip(), reply_markup=kb, parse_mode="HTML")
+    """.strip(), reply_markup=kb)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("h_"))
 def history(c):
@@ -166,7 +166,7 @@ def generate_photo(m):
 
     if not REPLICATE_API_TOKEN:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Replicate API не налаштований.", reply_markup=main_menu())
+        bot.send_message(cid, "[Warning] Replicate API не налаштований.", reply_markup=main_menu())
         return
 
     try:
@@ -185,7 +185,7 @@ def generate_photo(m):
         bot.send_photo(cid, img_url, caption=f"[Camera] {prompt}", reply_markup=main_menu())
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, f"Помилка фото: {str(e)[:80]}", reply_markup=main_menu())
+        bot.send_message(cid, f"[Error] Помилка фото: {str(e)[:80]}", reply_markup=main_menu())
 
 # === ВІДЕО: STABLE VIDEO DIFFUSION ===
 def generate_video(m):
@@ -196,11 +196,10 @@ def generate_video(m):
 
     if not REPLICATE_API_TOKEN:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Replicate API не налаштований.", reply_markup=main_menu())
+        bot.send_message(cid, "[Warning] Replicate API не налаштований.", reply_markup=main_menu())
         return
 
     try:
-        # Крок 1: Генеруємо ключовий кадр
         image_output = replicate.run(
             "black-forest-labs/flux-schnell",
             input={
@@ -213,7 +212,6 @@ def generate_video(m):
         )
         image_url = image_output[0]
 
-        # Крок 2: Анімуємо у відео
         video_output = replicate.run(
             "stability-ai/stable-video-diffusion-img2vid-xt",
             input={
@@ -228,21 +226,21 @@ def generate_video(m):
         bot.send_video(cid, video_url, caption=f"[Film] {prompt}", reply_markup=main_menu())
     except Exception as e:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, f"Помилка відео: {str(e)[:80]}", reply_markup=main_menu())
+        bot.send_message(cid, f"[Error] Помилка відео: {str(e)[:80]}", reply_markup=main_menu())
 
 # ======== НАЗАД ========
 @bot.message_handler(func=lambda m: m.text == "Назад")
 def back(m):
     bot.send_message(m.chat.id, "Головне меню", reply_markup=main_menu())
 
-# ======== ІНШІ ФУНКЦІЇ — З КНОПКАМИ! ========
+# ======== ІНШІ ФУНКЦІЇ ========
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
     load = start_loading(cid, "Шукаю новини")
     if not groq_client:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "GROQ не налаштований.", reply_markup=main_menu())
+        bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
         return
     try:
         completion = groq_client.chat.completions.create(
@@ -255,7 +253,7 @@ def news(m):
         user_data.setdefault(cid, {})["news"].append(time.strftime("%H:%M"))
     except:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "GROQ тимчасово недоступний.", reply_markup=main_menu())
+        bot.send_message(cid, "[Error] GROQ тимчасово недоступний.", reply_markup=main_menu())
 
 @bot.message_handler(func=lambda m: m.text == "Створити презентацію")
 def create_pres(m):
@@ -269,7 +267,7 @@ def gen_pres(m):
     load = start_loading(cid, "Створюю PDF")
     if not groq_client:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "GROQ не налаштований.", reply_markup=main_menu())
+        bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
         return
     try:
         completion = groq_client.chat.completions.create(
@@ -292,7 +290,7 @@ def gen_pres(m):
         bot.send_document(cid, buffer, caption=topic, filename=f"{topic[:50]}.pdf", reply_markup=main_menu())
     except:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "Помилка створення PDF.", reply_markup=main_menu())
+        bot.send_message("[Error] Помилка створення PDF.", reply_markup=main_menu())
 
 @bot.message_handler(func=lambda m: m.text == "Відповіді на питання")
 def ask_q(m):
@@ -306,7 +304,7 @@ def answer_q(m):
     load = start_loading(cid, "Думаю...")
     if not groq_client:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "GROQ не налаштований.", reply_markup=main_menu())
+        bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
         return
     try:
         completion = groq_client.chat.completions.create(
@@ -318,7 +316,7 @@ def answer_q(m):
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
     except:
         stop_loading(cid, load.message_id)
-        bot.send_message(cid, "GROQ перевантажено.", reply_markup=main_menu())
+        bot.send_message(cid, "[Error] GROQ перевантажено.", reply_markup=main_menu())
 
 # ======== FLASK ========
 @app.route(WEBHOOK_PATH, methods=["POST"])
