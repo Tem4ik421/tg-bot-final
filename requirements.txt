@@ -4,4 +4,3 @@ requests==2.32.5
 fpdf==1.7.2
 gunicorn==23.0.0
 groq==0.4.0
-klingai==0.1.5
