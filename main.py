@@ -51,7 +51,7 @@ def start_progress(cid, text="Генерую"):
     loading[cid] = {"msg_id": msg.message_id, "type": "progress"}
     
     def update():
-        for p in range(1, 101):  # 1% крок
+        for p in range(1, 101):
             if cid not in loading or loading[cid].get("stop"):
                 break
             try:
@@ -61,9 +61,8 @@ def start_progress(cid, text="Генерую"):
                 )
             except:
                 pass
-            time.sleep(0.05)  # Швидко, але плавно
+            time.sleep(0.05)
     threading.Thread(target=update, daemon=True).start()
-    return msg
 
 def stop_progress(cid):
     if cid in loading and loading[cid].get("type") == "progress":
@@ -160,7 +159,7 @@ def generate_photo(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
     user_data.setdefault(cid, {})["media"].append(prompt)
-    load = start_progress(cid, "ГЕНЕРУЮ ФОТО")
+    start_progress(cid, "ГЕНЕРУЮ ФОТО")
 
     if not REPLICATE_API_TOKEN:
         stop_progress(cid)
@@ -168,9 +167,8 @@ def generate_photo(m):
         return
 
     try:
-        # Швидка генерація
         output = replicate.run(
-            "black-forest-labs/flux-schnell:latest",
+            "black-forest-labs/flux-schnell",  # ПРАВИЛЬНА МОДЕЛЬ — БЕЗ :latest
             input={
                 "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality",
                 "num_outputs": 1,
@@ -184,14 +182,14 @@ def generate_photo(m):
         bot.send_photo(cid, img_url, caption=f"<b>ФОТО:</b> {prompt}", reply_markup=main_menu())
     except Exception as e:
         stop_progress(cid)
-        bot.send_message(cid, f"[Error] Помилка фото: {str(e)[:100]}", reply_markup=main_menu())
+        bot.send_message(cid, f"[Error] Помилка: {str(e)[:100]}", reply_markup=main_menu())
 
 # === ВІДЕО ===
 def generate_video(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
     user_data.setdefault(cid, {})["video"].append(prompt)
-    load = start_progress(cid, "СТВОРЮЮ ВІДЕО")
+    start_progress(cid, "СТВОРЮЮ ВІДЕО")
 
     if not REPLICATE_API_TOKEN:
         stop_progress(cid)
@@ -200,7 +198,7 @@ def generate_video(m):
 
     try:
         image_output = replicate.run(
-            "black-forest-labs/flux-schnell:latest",
+            "black-forest-labs/flux-schnell",
             input={
                 "prompt": prompt + ", cinematic keyframe, 4K, ultra realistic, sharp",
                 "num_outputs": 1,
@@ -236,7 +234,7 @@ def back(m):
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
-    load = start_progress(cid, "ШУКАЮ НОВИНИ")
+    start_progress(cid, "ШУКАЮ НОВИНИ")
     if not groq_client:
         stop_progress(cid)
         bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
@@ -264,7 +262,7 @@ def gen_pres(m):
     cid = m.chat.id
     topic = m.text.strip()
     user_data.setdefault(cid, {})["pres"].append(topic)
-    load = start_progress(cid, "СТВОРЮЮ PDF")
+    start_progress(cid, "СТВОРЮЮ PDF")
     if not groq_client:
         stop_progress(cid)
         bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
@@ -302,7 +300,7 @@ def answer_q(m):
     cid = m.chat.id
     q = m.text.strip()
     user_data.setdefault(cid, {})["questions"].append(q)
-    load = start_progress(cid, "ДУМАЮ...")
+    start_progress(cid, "ДУМАЮ...")
     if not groq_client:
         stop_progress(cid)
         bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
