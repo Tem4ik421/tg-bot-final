@@ -40,17 +40,15 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# ======== ГРАДІЄНТНА ПРОГРЕС-ПОЛОСКА ========
-def gradient_bar(percent, width=20):
-    colors = ["Red", "Orange", "Yellow", "Green", "Blue", "Purple"]
-    idx = min(int(percent / 100 * len(colors)), len(colors)-1)
+# ======== БІЛА ПРОГРЕС-ПОЛОСКА З ПРОЦЕНТАМИ ========
+def progress_bar(percent, width=20):
     filled = int(width * percent // 100)
     bar = "█" * filled + "░" * (width - filled)
-    return f"<code>{bar}</code> <b>{percent}% {colors[idx]}</b>"
+    return f"<code>{bar}</code> <b>{percent}%</b>"
 
-def start_gradient(cid, text="Генерую"):
-    msg = bot.send_message(cid, f"<b>{text}</b>\n{gradient_bar(0)}")
-    loading[cid] = {"msg_id": msg.message_id, "type": "gradient"}
+def start_loading(cid, text="Генерую"):
+    msg = bot.send_message(cid, f"<b>{text}</b>\n{progress_bar(0)}")
+    loading[cid] = {"msg_id": msg.message_id, "type": "progress"}
     
     def update():
         for p in range(0, 101, 5):
@@ -58,7 +56,7 @@ def start_gradient(cid, text="Генерую"):
                 break
             try:
                 bot.edit_message_text(
-                    f"<b>{text}</b>\n{gradient_bar(p)}",
+                    f"<b>{text}</b>\n{progress_bar(p)}",
                     cid, loading[cid]["msg_id"]
                 )
             except:
@@ -67,8 +65,8 @@ def start_gradient(cid, text="Генерую"):
     threading.Thread(target=update, daemon=True).start()
     return msg
 
-def stop_gradient(cid):
-    if cid in loading and loading[cid].get("type") == "gradient":
+def stop_loading(cid):
+    if cid in loading and loading[cid].get("type") == "progress":
         loading[cid]["stop"] = True
         time.sleep(0.5)
         try:
@@ -162,16 +160,16 @@ def generate_photo(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
     user_data.setdefault(cid, {})["media"].append(prompt)
-    load = start_gradient(cid, "ГЕНЕРУЮ ФОТО")
+    load = start_loading(cid, "ГЕНЕРУЮ ФОТО")
 
     if not REPLICATE_API_TOKEN:
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_message(cid, "[Warning] Replicate API не налаштований.", reply_markup=main_menu())
         return
 
     try:
         output = replicate.run(
-            "black-forest-labs/flux-schnell:latest",  # ФІКС: додано :latest
+            "black-forest-labs/flux-schnell:latest",  # ПРАЦЮЄ!
             input={
                 "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality",
                 "num_outputs": 1,
@@ -181,10 +179,10 @@ def generate_photo(m):
             }
         )
         img_url = output[0]
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_photo(cid, img_url, caption=f"<b>ФОТО:</b> {prompt}", reply_markup=main_menu())
     except Exception as e:
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_message(cid, f"[Error] Помилка фото: {str(e)[:100]}", reply_markup=main_menu())
 
 # === ВІДЕО ===
@@ -192,10 +190,10 @@ def generate_video(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
     user_data.setdefault(cid, {})["video"].append(prompt)
-    load = start_gradient(cid, "СТВОРЮЮ ВІДЕО")
+    load = start_loading(cid, "СТВОРЮЮ ВІДЕО")
 
     if not REPLICATE_API_TOKEN:
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_message(cid, "[Warning] Replicate API не налаштований.", reply_markup=main_menu())
         return
 
@@ -222,10 +220,10 @@ def generate_video(m):
             }
         )
         video_url = video_output[0]
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_video(cid, video_url, caption=f"<b>ВІДЕО:</b> {prompt}", reply_markup=main_menu())
     except Exception as e:
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_message(cid, f"[Error] Помилка відео: {str(e)[:100]}", reply_markup=main_menu())
 
 # ======== НАЗАД ========
@@ -237,9 +235,9 @@ def back(m):
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
-    load = start_gradient(cid, "ШУКАЮ НОВИНИ")
+    load = start_loading(cid, "ШУКАЮ НОВИНИ")
     if not groq_client:
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
         return
     try:
@@ -248,11 +246,11 @@ def news(m):
             messages=[{"role": "user", "content": "3 головні морські новини за 24 год: заголовок, 2 речення, фото, відео YouTube, джерело. Markdown."}],
             max_tokens=1000
         )
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
         user_data.setdefault(cid, {})["news"].append(time.strftime("%H:%M"))
     except Exception as e:
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_message(cid, "[Error] GROQ тимчасово недоступний.", reply_markup=main_menu())
 
 # ======== ПРЕЗЕНТАЦІЯ ========
@@ -265,9 +263,9 @@ def gen_pres(m):
     cid = m.chat.id
     topic = m.text.strip()
     user_data.setdefault(cid, {})["pres"].append(topic)
-    load = start_gradient(cid, "СТВОРЮЮ PDF")
+    load = start_loading(cid, "СТВОРЮЮ PDF")
     if not groq_client:
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
         return
     try:
@@ -287,10 +285,10 @@ def gen_pres(m):
         buffer = BytesIO()
         pdf.output(buffer)
         buffer.seek(0)
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_document(cid, buffer, caption=f"<b>{topic}</b>", filename=f"{topic[:50]}.pdf", reply_markup=main_menu())
     except Exception as e:
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_message(cid, "[Error] Помилка створення PDF.", reply_markup=main_menu())
 
 # ======== ПИТАННЯ ========
@@ -303,9 +301,9 @@ def answer_q(m):
     cid = m.chat.id
     q = m.text.strip()
     user_data.setdefault(cid, {})["questions"].append(q)
-    load = start_gradient(cid, "ДУМАЮ...")
+    load = start_loading(cid, "ДУМАЮ...")
     if not groq_client:
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
         return
     try:
@@ -314,10 +312,10 @@ def answer_q(m):
             messages=[{"role": "user", "content": f"Відповідь: {q}. 3 абзаци, фото, відео YouTube, 2 джерела."}],
             max_tokens=1200
         )
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
     except Exception as e:
-        stop_gradient(cid)
+        stop_loading(cid)
         bot.send_message(cid, "[Error] GROQ перевантажено.", reply_markup=main_menu())
 
 # ======== FLASK WEBHOOK ========
