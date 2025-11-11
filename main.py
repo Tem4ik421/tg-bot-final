@@ -44,11 +44,11 @@ threading.Thread(target=keep_alive, daemon=True).start()
 def progress_bar(percent, width=20):
     filled = int(width * percent // 100)
     bar = "█" * filled + "░" * (width - filled)
-    return f"<code style='background:white;color:black'>{bar}</code> <b>{percent}%</b>"
+    return f"<code>{bar}</code> <b>{percent}%</b>"
 
 def start_progress(cid, text="Генерую"):
     msg = bot.send_message(cid, f"<b>{text}</b>\n{progress_bar(0)}", parse_mode="HTML")
-    loading[cid] = {"msg_id": msg.message_id, "type": "progress"}
+    loading[cid] = {"msg_id": msg.message_id, "type": "progress", "start_time": time.time()}
     
     def update():
         for p in range(1, 101):
@@ -169,7 +169,7 @@ def generate_photo(m):
 
     try:
         output = replicate.run(
-            "black-forest-labs/flux-schnell",  # БЕЗ ВЕРСІЇ — ПРАЦЮЄ!
+            "black-forest-labs/flux-schnell",
             input={
                 "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality, masterpiece",
                 "num_outputs": 1,
@@ -343,7 +343,7 @@ try:
         bot.set_webhook(url=WEBHOOK_URL, drop_pending_updates=True)
         print(f"Webhook встановлено: {WEBHOOK_URL}")
     else:
-        print(f"Webhook активнийight: {info.url}")
+        print(f"Webhook активний: {info.url}")
 except Exception as e:
     print(f"Помилка webhook: {e}")
 
