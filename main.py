@@ -168,7 +168,7 @@ def generate_photo(m):
 
     try:
         output = replicate.run(
-            "black-forest-labs/flux-schnell:8e127a7c4d32d31b6d2e8674369e8c3b7e1c8d1c7f9c3b2a1d0e9f8c7b6a5d4e3",  # ПРАВИЛЬНА ВЕРСІЯ
+            "black-forest-labs/flux-schnell",  # БЕЗ :latest і без версії — ПРАЦЮЄ!
             input={
                 "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality",
                 "num_outputs": 1,
@@ -198,7 +198,7 @@ def generate_video(m):
 
     try:
         image_output = replicate.run(
-            "black-forest-labs/flux-schnell:8e127a7c4d32d31b6d2e8674369e8c3b7e1c8d1c7f9c3b2a1d0e9f8c7b6a5d4e3",
+            "black-forest-labs/flux-schnell",
             input={
                 "prompt": prompt + ", cinematic keyframe, 4K, ultra realistic, sharp",
                 "num_outputs": 1,
@@ -210,7 +210,7 @@ def generate_video(m):
         image_url = image_output[0]
 
         video_output = replicate.run(
-            "stability-ai/stable-video-diffusion-img2vid-xt:1a0f2fbf444d3e6e0d5d3d2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2",
+            "stability-ai/stable-video-diffusion-img2vid-xt",
             input={
                 "image": image_url,
                 "motion_bucket_id": 127,
