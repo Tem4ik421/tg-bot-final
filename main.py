@@ -40,18 +40,18 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# ======== БІЛА ПРОГРЕС-ПОЛОСКА З ПРОЦЕНТАМИ ========
+# ======== БІЛА ПРОГРЕС-ПОЛОСКА (1% КРОК) ========
 def progress_bar(percent, width=20):
     filled = int(width * percent // 100)
     bar = "█" * filled + "░" * (width - filled)
     return f"<code>{bar}</code> <b>{percent}%</b>"
 
-def start_loading(cid, text="Генерую"):
+def start_progress(cid, text="Генерую"):
     msg = bot.send_message(cid, f"<b>{text}</b>\n{progress_bar(0)}")
     loading[cid] = {"msg_id": msg.message_id, "type": "progress"}
     
     def update():
-        for p in range(0, 101, 5):
+        for p in range(1, 101):  # 1% крок
             if cid not in loading or loading[cid].get("stop"):
                 break
             try:
@@ -61,14 +61,14 @@ def start_loading(cid, text="Генерую"):
                 )
             except:
                 pass
-            time.sleep(0.25)
+            time.sleep(0.05)  # Швидко, але плавно
     threading.Thread(target=update, daemon=True).start()
     return msg
 
-def stop_loading(cid):
+def stop_progress(cid):
     if cid in loading and loading[cid].get("type") == "progress":
         loading[cid]["stop"] = True
-        time.sleep(0.5)
+        time.sleep(0.1)
         try:
             bot.delete_message(cid, loading[cid]["msg_id"])
         except:
@@ -160,16 +160,17 @@ def generate_photo(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
     user_data.setdefault(cid, {})["media"].append(prompt)
-    load = start_loading(cid, "ГЕНЕРУЮ ФОТО")
+    load = start_progress(cid, "ГЕНЕРУЮ ФОТО")
 
     if not REPLICATE_API_TOKEN:
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_message(cid, "[Warning] Replicate API не налаштований.", reply_markup=main_menu())
         return
 
     try:
+        # Швидка генерація
         output = replicate.run(
-            "black-forest-labs/flux-schnell:latest",  # ПРАЦЮЄ!
+            "black-forest-labs/flux-schnell:latest",
             input={
                 "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality",
                 "num_outputs": 1,
@@ -179,10 +180,10 @@ def generate_photo(m):
             }
         )
         img_url = output[0]
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_photo(cid, img_url, caption=f"<b>ФОТО:</b> {prompt}", reply_markup=main_menu())
     except Exception as e:
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_message(cid, f"[Error] Помилка фото: {str(e)[:100]}", reply_markup=main_menu())
 
 # === ВІДЕО ===
@@ -190,10 +191,10 @@ def generate_video(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
     user_data.setdefault(cid, {})["video"].append(prompt)
-    load = start_loading(cid, "СТВОРЮЮ ВІДЕО")
+    load = start_progress(cid, "СТВОРЮЮ ВІДЕО")
 
     if not REPLICATE_API_TOKEN:
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_message(cid, "[Warning] Replicate API не налаштований.", reply_markup=main_menu())
         return
 
@@ -220,10 +221,10 @@ def generate_video(m):
             }
         )
         video_url = video_output[0]
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_video(cid, video_url, caption=f"<b>ВІДЕО:</b> {prompt}", reply_markup=main_menu())
     except Exception as e:
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_message(cid, f"[Error] Помилка відео: {str(e)[:100]}", reply_markup=main_menu())
 
 # ======== НАЗАД ========
@@ -235,9 +236,9 @@ def back(m):
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
-    load = start_loading(cid, "ШУКАЮ НОВИНИ")
+    load = start_progress(cid, "ШУКАЮ НОВИНИ")
     if not groq_client:
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
         return
     try:
@@ -246,11 +247,11 @@ def news(m):
             messages=[{"role": "user", "content": "3 головні морські новини за 24 год: заголовок, 2 речення, фото, відео YouTube, джерело. Markdown."}],
             max_tokens=1000
         )
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
         user_data.setdefault(cid, {})["news"].append(time.strftime("%H:%M"))
     except Exception as e:
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_message(cid, "[Error] GROQ тимчасово недоступний.", reply_markup=main_menu())
 
 # ======== ПРЕЗЕНТАЦІЯ ========
@@ -263,9 +264,9 @@ def gen_pres(m):
     cid = m.chat.id
     topic = m.text.strip()
     user_data.setdefault(cid, {})["pres"].append(topic)
-    load = start_loading(cid, "СТВОРЮЮ PDF")
+    load = start_progress(cid, "СТВОРЮЮ PDF")
     if not groq_client:
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
         return
     try:
@@ -285,10 +286,10 @@ def gen_pres(m):
         buffer = BytesIO()
         pdf.output(buffer)
         buffer.seek(0)
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_document(cid, buffer, caption=f"<b>{topic}</b>", filename=f"{topic[:50]}.pdf", reply_markup=main_menu())
     except Exception as e:
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_message(cid, "[Error] Помилка створення PDF.", reply_markup=main_menu())
 
 # ======== ПИТАННЯ ========
@@ -301,9 +302,9 @@ def answer_q(m):
     cid = m.chat.id
     q = m.text.strip()
     user_data.setdefault(cid, {})["questions"].append(q)
-    load = start_loading(cid, "ДУМАЮ...")
+    load = start_progress(cid, "ДУМАЮ...")
     if not groq_client:
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
         return
     try:
@@ -312,10 +313,10 @@ def answer_q(m):
             messages=[{"role": "user", "content": f"Відповідь: {q}. 3 абзаци, фото, відео YouTube, 2 джерела."}],
             max_tokens=1200
         )
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
     except Exception as e:
-        stop_loading(cid)
+        stop_progress(cid)
         bot.send_message(cid, "[Error] GROQ перевантажено.", reply_markup=main_menu())
 
 # ======== FLASK WEBHOOK ========
