@@ -40,14 +40,14 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# ======== БІЛА ПРОГРЕС-ПОЛОСКА (1% КРОК) ========
+# ======== КРАСИВИЙ БІЛИЙ ПРОГРЕС-БАР (1% КРОК) ========
 def progress_bar(percent, width=20):
     filled = int(width * percent // 100)
     bar = "█" * filled + "░" * (width - filled)
-    return f"<code>{bar}</code> <b>{percent}%</b>"
+    return f"<code style='background:white;color:black'>{bar}</code> <b>{percent}%</b>"
 
 def start_progress(cid, text="Генерую"):
-    msg = bot.send_message(cid, f"<b>{text}</b>\n{progress_bar(0)}")
+    msg = bot.send_message(cid, f"<b>{text}</b>\n{progress_bar(0)}", parse_mode="HTML")
     loading[cid] = {"msg_id": msg.message_id, "type": "progress"}
     
     def update():
@@ -57,7 +57,8 @@ def start_progress(cid, text="Генерую"):
             try:
                 bot.edit_message_text(
                     f"<b>{text}</b>\n{progress_bar(p)}",
-                    cid, loading[cid]["msg_id"]
+                    cid, loading[cid]["msg_id"],
+                    parse_mode="HTML"
                 )
             except:
                 pass
@@ -168,7 +169,7 @@ def generate_photo(m):
 
     try:
         output = replicate.run(
-            "black-forest-labs/flux-schnell:8e127a7c4d32d31b6d2e8674369e8c3b7e1c8d1c7f9c3b2a1d0e9f8c7b6a5d4e3",
+            "black-forest-labs/flux-schnell",  # БЕЗ ВЕРСІЇ — ПРАЦЮЄ!
             input={
                 "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality, masterpiece",
                 "num_outputs": 1,
@@ -198,7 +199,7 @@ def generate_video(m):
 
     try:
         image_output = replicate.run(
-            "black-forest-labs/flux-schnell:8e127a7c4d32d31b6d2e8674369e8c3b7e1c8d1c7f9c3b2a1d0e9f8c7b6a5d4e3",
+            "black-forest-labs/flux-schnell",
             input={
                 "prompt": prompt + ", cinematic keyframe, 4K, ultra realistic, sharp, masterpiece",
                 "num_outputs": 1,
@@ -210,7 +211,7 @@ def generate_video(m):
         image_url = image_output[0]
 
         video_output = replicate.run(
-            "stability-ai/stable-video-diffusion-img2vid-xt:1a0f2fbf444d3e6e0d5d3d2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2",
+            "stability-ai/stable-video-diffusion-img2vid-xt",
             input={
                 "image": image_url,
                 "motion_bucket_id": 127,
@@ -342,7 +343,7 @@ try:
         bot.set_webhook(url=WEBHOOK_URL, drop_pending_updates=True)
         print(f"Webhook встановлено: {WEBHOOK_URL}")
     else:
-        print(f"Webhook активний: {info.url}")
+        print(f"Webhook активнийight: {info.url}")
 except Exception as e:
     print(f"Помилка webhook: {e}")
 
