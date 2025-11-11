@@ -24,7 +24,8 @@ groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 if REPLICATE_API_TOKEN:
     replicate.Client(api_token=REPLICATE_API_TOKEN)
 
-bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
+# threaded=False — критично для Gunicorn!
+bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
 app = Flask(__name__)
 user_data = {}
 loading = {}
@@ -63,7 +64,7 @@ def stop_loading(cid, mid):
     except:
         pass
 
-# ======== ГОЛОВНЕ МЕНЮ — КНОПКИ ЗАВЖДИ ========
+# ======== ГОЛОВНЕ МЕНЮ ========
 def main_menu():
     k = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     k.row("Профиль")
@@ -306,22 +307,30 @@ def answer_q(m):
         stop_loading(cid, load.message_id)
         bot.send_message(cid, "[Error] GROQ перевантажено.", reply_markup=main_menu())
 
-# ======== FLASK WEBHOOK ========
+# ======== FLASK WEBHOOK — КРИТИЧНИЙ ФІКС ========
+@app.route('/', methods=['GET', 'HEAD'])
+def index():
+    return '', 200  # Для keep_alive
+
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     if request.headers.get("content-type") == "application/json":
-        update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
-        bot.process_new_updates([update])
+        json_string = request.get_data().decode("utf-8")
+        print(f"ОТРИМАНО UPDATE: {json_string[:200]}")  # ЛОГ ДЛЯ ДЕБАГУ
+        update = telebot.types.Update.de_json(json_string)
+        # РУЧНА ОБРОБКА — ПРАЦЮЄ З GUNICORN!
+        bot._exec_task(bot._handle_update, update)
         return "OK", 200
+    print("Bad content-type!")
     return "", 400
 
-# ======== АВТО-WEBHOOK — ПІСЛЯ ВСЬОГО! ========
+# ======== АВТО-WEBHOOK ========
 try:
     info = bot.get_webhook_info()
     if info.url != WEBHOOK_URL:
         bot.remove_webhook()
         time.sleep(1)
-        bot.set_webhook(url=WEBHOOK_URL)
+        bot.set_webhook(url=WEBHOOK_URL, drop_pending_updates=True)
         print(f"Webhook встановлено: {WEBHOOK_URL}")
     else:
         print(f"Webhook активний: {info.url}")
