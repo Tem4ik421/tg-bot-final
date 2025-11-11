@@ -167,8 +167,9 @@ def generate_photo(m):
         return
 
     try:
+        # ПРАВИЛЬНА МОДЕЛЬ — ПЕРЕВІРЕНО 11.11.2025
         output = replicate.run(
-            "black-forest-labs/flux-schnell",  # ПРАВИЛЬНА МОДЕЛЬ — БЕЗ :latest
+            "black-forest-labs/flux-schnell",
             input={
                 "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality",
                 "num_outputs": 1,
