@@ -40,20 +40,6 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# ======== АВТО-WEBHOOK (ВИКЛИКАЄТЬСЯ ПРИ СТАРТІ) ========
-def setup_webhook():
-    try:
-        info = bot.get_webhook_info()
-        if info.url != WEBHOOK_URL:
-            bot.remove_webhook()
-            time.sleep(1)
-            bot.set_webhook(url=WEBHOOK_URL)
-            print(f"Webhook встановлено: {WEBHOOK_URL}")
-        else:
-            print(f"Webhook активний: {info.url}")
-    except Exception as e:
-        print(f"Помилка webhook: {e}")
-
 # ======== АНІМАЦІЯ ========
 def start_loading(cid, text="Генерую"):
     msg = bot.send_message(cid, f"{text} [Ship]")
@@ -329,6 +315,17 @@ def webhook():
         return "OK", 200
     return "", 400
 
-# ======== АВТО-WEBHOOK + СТАРТ (ПРИ ІМПОРТІ) ========
-setup_webhook()
+# ======== АВТО-WEBHOOK — ПІСЛЯ ВСЬОГО! ========
+try:
+    info = bot.get_webhook_info()
+    if info.url != WEBHOOK_URL:
+        bot.remove_webhook()
+        time.sleep(1)
+        bot.set_webhook(url=WEBHOOK_URL)
+        print(f"Webhook встановлено: {WEBHOOK_URL}")
+    else:
+        print(f"Webhook активний: {info.url}")
+except Exception as e:
+    print(f"Помилка webhook: {e}")
+
 print("Бот запущено! Слава ЗСУ!")
