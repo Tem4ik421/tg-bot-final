@@ -95,47 +95,6 @@ def start(m):
         "<b>Обери функцію</b>",
         reply_markup=main_menu())
 
-# ======== ПРОФІЛЬ ========
-@bot.message_handler(func=lambda m: m.text == "Профиль")
-def profile(m):
-    cid = m.chat.id
-    u = user_data.get(cid, {})
-    kb = types.InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        types.InlineKeyboardButton("Питання", callback_data="h_q"),
-        types.InlineKeyboardButton("Фото", callback_data="h_m"),
-        types.InlineKeyboardButton("Відео", callback_data="h_v"),
-        types.InlineKeyboardButton("Презентації", callback_data="h_p"),
-        types.InlineKeyboardButton("Новини", callback_data="h_n"),
-        types.InlineKeyboardButton("Відповіді", callback_data="h_a")
-    )
-    bot.send_message(cid, f"""
-<b>МОРСЬКИЙ ПРОФІЛЬ</b>
-ID: <code>1474031301</code>
-<b>Статистика:</b>
-Питань: {len(u.get('questions', []))}
-Фото: {len(u.get('media', []))}
-Відео: {len(u.get('video', []))}
-Презентацій: {len(u.get('pres', []))}
-Новин: {len(u.get('news', []))}
-Відповідей: {len(u.get('answers', []))}
-    """.strip(), reply_markup=kb)
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("h_"))
-def history(c):
-    cid = c.message.chat.id
-    t = c.data[2:]
-    maps = {"q":"questions", "m":"media", "v":"video", "p":"pres", "n":"news", "a":"answers"}
-    items = user_data.get(cid, {}).get(maps.get(t, ""), [])[-10:]
-    if not items:
-        bot.answer_callback_query(c.id, "Пусто!", show_alert=True)
-        return
-    title = {"q":"Питання", "m":"Фото", "v":"Відео", "p":"Презентації", "n":"Новини", "a":"Відповіді"}[t]
-    text = f"<b>{title} (останні 10):</b>\n\n"
-    for i, x in enumerate(items, 1):
-        text += f"{i}. <code>{x[:50]}{'...' if len(x)>50 else ''}</code>\n"
-    bot.send_message(cid, text, reply_markup=main_menu())
-
 # ======== ГЕНЕРАТОР МЕДІА ========
 @bot.message_handler(func=lambda m: m.text == "Генератор Медіа")
 def media_menu(m):
@@ -159,6 +118,8 @@ def generate_photo(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
     user_data.setdefault(cid, {})["media"].append(prompt)
+    
+    # ПОКАЗУЄМО ПРОГРЕС-БАР
     start_progress(cid, "ГЕНЕРУЮ ФОТО")
 
     if not REPLICATE_API_TOKEN:
@@ -167,9 +128,8 @@ def generate_photo(m):
         return
 
     try:
-        # ПРАВИЛЬНА МОДЕЛЬ — ПЕРЕВІРЕНО 11.11.2025
         output = replicate.run(
-            "black-forest-labs/flux-schnell",
+            "black-forest-labs/flux-schnell",  # ПРАВИЛЬНА МОДЕЛЬ
             input={
                 "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality",
                 "num_outputs": 1,
@@ -230,93 +190,6 @@ def generate_video(m):
 @bot.message_handler(func=lambda m: m.text == "Назад")
 def back(m):
     bot.send_message(m.chat.id, "<b>ГОЛОВНЕ МЕНЮ</b>", reply_markup=main_menu())
-
-# ======== МОРСЬКІ НОВИНИ ========
-@bot.message_handler(func=lambda m: m.text == "Морські новини")
-def news(m):
-    cid = m.chat.id
-    start_progress(cid, "ШУКАЮ НОВИНИ")
-    if not groq_client:
-        stop_progress(cid)
-        bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
-        return
-    try:
-        completion = groq_client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
-            messages=[{"role": "user", "content": "3 головні морські новини за 24 год: заголовок, 2 речення, фото, відео YouTube, джерело. Markdown."}],
-            max_tokens=1000
-        )
-        stop_progress(cid)
-        bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
-        user_data.setdefault(cid, {})["news"].append(time.strftime("%H:%M"))
-    except Exception as e:
-        stop_progress(cid)
-        bot.send_message(cid, "[Error] GROQ тимчасово недоступний.", reply_markup=main_menu())
-
-# ======== ПРЕЗЕНТАЦІЯ ========
-@bot.message_handler(func=lambda m: m.text == "Створити презентацію")
-def create_pres(m):
-    bot.send_message(m.chat.id, "<b>ТЕМА ПРЕЗЕНТАЦІЇ?</b>\nПриклад: <code>Перемога ЗСУ на морі</code>", reply_markup=types.ReplyKeyboardRemove())
-    bot.register_next_step_handler(m, gen_pres)
-
-def gen_pres(m):
-    cid = m.chat.id
-    topic = m.text.strip()
-    user_data.setdefault(cid, {})["pres"].append(topic)
-    start_progress(cid, "СТВОРЮЮ PDF")
-    if not groq_client:
-        stop_progress(cid)
-        bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
-        return
-    try:
-        completion = groq_client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
-            messages=[{"role": "user", "content": f"Презентація: {topic}. 5 слайдів: заголовок, 3 пункти, фото-опис, колір фону (hex). Стиль National Geographic."}],
-            max_tokens=1500
-        )
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", "B", 16)
-        pdf.cell(0, 10, topic, ln=1, align="C")
-        pdf.ln(10)
-        pdf.set_font("Arial", "", 11)
-        for line in completion.choices[0].message.content.split("\n"):
-            if line.strip(): pdf.multi_cell(0, 7, line)
-        buffer = BytesIO()
-        pdf.output(buffer)
-        buffer.seek(0)
-        stop_progress(cid)
-        bot.send_document(cid, buffer, caption=f"<b>{topic}</b>", filename=f"{topic[:50]}.pdf", reply_markup=main_menu())
-    except Exception as e:
-        stop_progress(cid)
-        bot.send_message(cid, "[Error] Помилка створення PDF.", reply_markup=main_menu())
-
-# ======== ПИТАННЯ ========
-@bot.message_handler(func=lambda m: m.text == "Відповіді на питання")
-def ask_q(m):
-    bot.send_message(m.chat.id, "<b>ЗАДАЙ ПИТАННЯ:</b>\nПриклад: <code>Коли ЗСУ звільнять Крим?</code>", reply_markup=types.ReplyKeyboardRemove())
-    bot.register_next_step_handler(m, answer_q)
-
-def answer_q(m):
-    cid = m.chat.id
-    q = m.text.strip()
-    user_data.setdefault(cid, {})["questions"].append(q)
-    start_progress(cid, "ДУМАЮ...")
-    if not groq_client:
-        stop_progress(cid)
-        bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
-        return
-    try:
-        completion = groq_client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
-            messages=[{"role": "user", "content": f"Відповідь: {q}. 3 абзаци, фото, відео YouTube, 2 джерела."}],
-            max_tokens=1200
-        )
-        stop_progress(cid)
-        bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
-    except Exception as e:
-        stop_progress(cid)
-        bot.send_message(cid, "[Error] GROQ перевантажено.", reply_markup=main_menu())
 
 # ======== FLASK WEBHOOK ========
 @app.route('/', methods=['GET', 'HEAD'])
