@@ -24,20 +24,19 @@ groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 if REPLICATE_API_TOKEN:
     replicate.Client(api_token=REPLICATE_API_TOKEN)
 
-# threaded=False — критично для Gunicorn!
-bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
+bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)  # threaded=False — OK для Gunicorn
 app = Flask(__name__)
 user_data = {}
 loading = {}
 
-# ======== АНТИФРИЗ (щоб Render не спав) ========
+# ======== АНТИФРИЗ ========
 def keep_alive():
     while True:
         try:
             requests.get(WEBHOOK_HOST, timeout=10)
         except:
             pass
-        time.sleep(300)  # кожні 5 хв
+        time.sleep(300)
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
@@ -144,18 +143,15 @@ def ask_prompt(m):
         reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video)
 
-# === ФОТО: FLUX.1 SCHNELL ===
 def generate_photo(m):
     cid = m.chat.id
     prompt = m.text
     user_data.setdefault(cid, {})["media"].append(prompt)
     load = start_loading(cid, "Генерую фото")
-
     if not REPLICATE_API_TOKEN:
         stop_loading(cid, load.message_id)
         bot.send_message(cid, "[Warning] Replicate API не налаштований.", reply_markup=main_menu())
         return
-
     try:
         output = replicate.run(
             "black-forest-labs/flux-schnell",
@@ -174,18 +170,15 @@ def generate_photo(m):
         stop_loading(cid, load.message_id)
         bot.send_message(cid, f"[Error] Помилка фото: {str(e)[:100]}", reply_markup=main_menu())
 
-# === ВІДЕО: STABLE VIDEO DIFFUSION ===
 def generate_video(m):
     cid = m.chat.id
     prompt = m.text
     user_data.setdefault(cid, {})["video"].append(prompt)
     load = start_loading(cid, "Створюю відео")
-
     if not REPLICATE_API_TOKEN:
         stop_loading(cid, load.message_id)
         bot.send_message(cid, "[Warning] Replicate API не налаштований.", reply_markup=main_menu())
         return
-
     try:
         image_output = replicate.run(
             "black-forest-labs/flux-schnell",
@@ -198,7 +191,6 @@ def generate_video(m):
             }
         )
         image_url = image_output[0]
-
         video_output = replicate.run(
             "stability-ai/stable-video-diffusion-img2vid-xt",
             input={
@@ -215,12 +207,10 @@ def generate_video(m):
         stop_loading(cid, load.message_id)
         bot.send_message(cid, f"[Error] Помилка відео: {str(e)[:100]}", reply_markup=main_menu())
 
-# ======== НАЗАД ========
 @bot.message_handler(func=lambda m: m.text == "Назад")
 def back(m):
     bot.send_message(m.chat.id, "Головне меню", reply_markup=main_menu())
 
-# ======== МОРСЬКІ НОВИНИ ========
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
@@ -242,7 +232,6 @@ def news(m):
         stop_loading(cid, load.message_id)
         bot.send_message(cid, "[Error] GROQ тимчасово недоступний.", reply_markup=main_menu())
 
-# ======== ПРЕЗЕНТАЦІЯ ========
 @bot.message_handler(func=lambda m: m.text == "Створити презентацію")
 def create_pres(m):
     bot.send_message(m.chat.id, "Тема презентації?\nПриклад: «Перемога ЗСУ на морі»", reply_markup=types.ReplyKeyboardRemove())
@@ -280,7 +269,6 @@ def gen_pres(m):
         stop_loading(cid, load.message_id)
         bot.send_message(cid, "[Error] Помилка створення PDF.", reply_markup=main_menu())
 
-# ======== ПИТАННЯ ========
 @bot.message_handler(func=lambda m: m.text == "Відповіді на питання")
 def ask_q(m):
     bot.send_message(m.chat.id, "Задай питання:\nПриклад: «Коли ЗСУ звільнять Крим?»", reply_markup=types.ReplyKeyboardRemove())
@@ -307,19 +295,19 @@ def answer_q(m):
         stop_loading(cid, load.message_id)
         bot.send_message(cid, "[Error] GROQ перевантажено.", reply_markup=main_menu())
 
-# ======== FLASK WEBHOOK — КРИТИЧНИЙ ФІКС ========
+# ======== FLASK WEBHOOK — ФІНАЛЬНИЙ ФІКС ========
 @app.route('/', methods=['GET', 'HEAD'])
 def index():
-    return '', 200  # Для keep_alive
+    return '', 200
 
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     if request.headers.get("content-type") == "application/json":
         json_string = request.get_data().decode("utf-8")
-        print(f"ОТРИМАНО UPDATE: {json_string[:200]}")  # ЛОГ ДЛЯ ДЕБАГУ
+        print(f"ОТРИМАНО UPDATE: {json_string[:200]}")
         update = telebot.types.Update.de_json(json_string)
-        # РУЧНА ОБРОБКА — ПРАЦЮЄ З GUNICORN!
-        bot._exec_task(bot._handle_update, update)
+        if update:
+            bot.process_new_updates([update])  # ПРАЦЮЄ!
         return "OK", 200
     print("Bad content-type!")
     return "", 400
