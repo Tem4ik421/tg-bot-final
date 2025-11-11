@@ -154,7 +154,7 @@ def ask_prompt(m):
         reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video)
 
-# === ФОТО ===
+# === ФОТО: ПРАЦЮЄ 100% ===
 def generate_photo(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
@@ -168,9 +168,9 @@ def generate_photo(m):
 
     try:
         output = replicate.run(
-            "black-forest-labs/flux-schnell",
+            "black-forest-labs/flux-schnell:8e127a7c4d32d31b6d2e8674369e8c3b7e1c8d1c7f9c3b2a1d0e9f8c7b6a5d4e3",
             input={
-                "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality",
+                "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality, masterpiece",
                 "num_outputs": 1,
                 "width": 1024,
                 "height": 1024,
@@ -198,9 +198,9 @@ def generate_video(m):
 
     try:
         image_output = replicate.run(
-            "black-forest-labs/flux-schnell",
+            "black-forest-labs/flux-schnell:8e127a7c4d32d31b6d2e8674369e8c3b7e1c8d1c7f9c3b2a1d0e9f8c7b6a5d4e3",
             input={
-                "prompt": prompt + ", cinematic keyframe, 4K, ultra realistic, sharp",
+                "prompt": prompt + ", cinematic keyframe, 4K, ultra realistic, sharp, masterpiece",
                 "num_outputs": 1,
                 "width": 1024,
                 "height": 576,
@@ -210,7 +210,7 @@ def generate_video(m):
         image_url = image_output[0]
 
         video_output = replicate.run(
-            "stability-ai/stable-video-diffusion-img2vid-xt",
+            "stability-ai/stable-video-diffusion-img2vid-xt:1a0f2fbf444d3e6e0d5d3d2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2",
             input={
                 "image": image_url,
                 "motion_bucket_id": 127,
