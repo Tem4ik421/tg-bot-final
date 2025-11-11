@@ -147,14 +147,14 @@ def media_menu(m):
 @bot.message_handler(func=lambda m: m.text in ["Фото", "Відео"])
 def ask_prompt(m):
     media_type = "фото" if "Фото" in m.text else "відео"
-    example = "ЗСУ на палубе, закат, фотореализм" if "Фото" in m.text else "ЗСУ на палубе, закат, 10 сек"
+    example = "Кіт на даху, захід сонця, фотореализм" if "Фото" in m.text else "Кіт танцює, 10 сек, анімація"
     bot.send_message(m.chat.id,
         f"<b>ОПИШИ {media_type.upper()}:</b>\n"
         f"Приклад: <code>{example}</code>",
         reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video)
 
-# === ФОТО: ПРАЦЮЄ 100% ===
+# === ФОТО ===
 def generate_photo(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
@@ -168,7 +168,7 @@ def generate_photo(m):
 
     try:
         output = replicate.run(
-            "black-forest-labs/flux-schnell",  # БЕЗ :latest і без версії — ПРАЦЮЄ!
+            "black-forest-labs/flux-schnell",
             input={
                 "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality",
                 "num_outputs": 1,
@@ -237,12 +237,12 @@ def news(m):
     start_progress(cid, "ШУКАЮ НОВИНИ")
     if not groq_client:
         stop_progress(cid)
-        bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
+        bot.send_message(cid, "[Warning] GROQ API ключ не налаштований.", reply_markup=main_menu())
         return
     try:
         completion = groq_client.chat.completions.create(
             model="llama-3.1-70b-versatile",
-            messages=[{"role": "user", "content": "3 головні морські новини за 24 год: заголовок, 2 речення, фото, відео YouTube, джерело. Markdown."}],
+            messages=[{"role": "user", "content": "3 найцікавіші новини про океан за 24 год: заголовок, 2 речення, фото, відео YouTube, джерело. Markdown."}],
             max_tokens=1000
         )
         stop_progress(cid)
@@ -255,7 +255,7 @@ def news(m):
 # ======== ПРЕЗЕНТАЦІЯ ========
 @bot.message_handler(func=lambda m: m.text == "Створити презентацію")
 def create_pres(m):
-    bot.send_message(m.chat.id, "<b>ТЕМА ПРЕЗЕНТАЦІЇ?</b>\nПриклад: <code>Перемога ЗСУ на морі</code>", reply_markup=types.ReplyKeyboardRemove())
+    bot.send_message(m.chat.id, "<b>ТЕМА ПРЕЗЕНТАЦІЇ?</b>\nПриклад: <code>Майбутнє штучного інтелекту</code>", reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, gen_pres)
 
 def gen_pres(m):
@@ -265,7 +265,7 @@ def gen_pres(m):
     start_progress(cid, "СТВОРЮЮ PDF")
     if not groq_client:
         stop_progress(cid)
-        bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
+        bot.send_message(cid, "[Warning] GROQ API ключ не налаштований.", reply_markup=main_menu())
         return
     try:
         completion = groq_client.chat.completions.create(
@@ -293,7 +293,7 @@ def gen_pres(m):
 # ======== ПИТАННЯ ========
 @bot.message_handler(func=lambda m: m.text == "Відповіді на питання")
 def ask_q(m):
-    bot.send_message(m.chat.id, "<b>ЗАДАЙ ПИТАННЯ:</b>\nПриклад: <code>Коли ЗСУ звільнять Крим?</code>", reply_markup=types.ReplyKeyboardRemove())
+    bot.send_message(m.chat.id, "<b>ЗАДАЙ ПИТАННЯ:</b>\nПриклад: <code>Коли я стану мільйонером?</code>", reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, answer_q)
 
 def answer_q(m):
@@ -303,7 +303,7 @@ def answer_q(m):
     start_progress(cid, "ДУМАЮ...")
     if not groq_client:
         stop_progress(cid)
-        bot.send_message(cid, "[Warning] GROQ не налаштований.", reply_markup=main_menu())
+        bot.send_message(cid, "[Warning] GROQ API ключ не налаштований.", reply_markup=main_menu())
         return
     try:
         completion = groq_client.chat.completions.create(
