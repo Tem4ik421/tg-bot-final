@@ -95,129 +95,34 @@ def start(m):
         "<b>Обери функцію</b>",
         reply_markup=main_menu())
 
-# ======== ГЕНЕРАТОР МЕДІА ========
-@bot.message_handler(func=lambda m: m.text == "Генератор Медіа")
-def media_menu(m):
-    k = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    k.row("Фото", "Відео")
-    k.row("Назад")
-    bot.send_message(m.chat.id, "<b>ОБЕРИ ЗБРОЮ, КАПІТАНЕ!</b>", reply_markup=k)
-
-@bot.message_handler(func=lambda m: m.text in ["Фото", "Відео"])
-def ask_prompt(m):
-    media_type = "фото" if "Фото" in m.text else "відео"
-    example = "ЗСУ на палубе, закат, фотореализм" if "Фото" in m.text else "ЗСУ на палубе, закат, 10 сек"
-    bot.send_message(m.chat.id,
-        f"<b>ОПИШИ {media_type.upper()}:</b>\n"
-        f"Приклад: <code>{example}</code>",
-        reply_markup=types.ReplyKeyboardRemove())
-    bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video)
-
-# === ФОТО: ПРАЦЮЄ 100% ===
-def generate_photo(m):
+# ======== ПРОФІЛЬ ========
+@bot.message_handler(func=lambda m: m.text == "Профиль")
+def profile(m):
     cid = m.chat.id
-    prompt = m.text.strip().strip('«»"')
-    user_data.setdefault(cid, {})["media"].append(prompt)
-    
-    # ПОКАЗУЄМО ПРОГРЕС-БАР
-    start_progress(cid, "ГЕНЕРУЮ ФОТО")
+    u = user_data.get(cid, {})
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        types.InlineKeyboardButton("Питання", callback_data="h_q"),
+        types.InlineKeyboardButton("Фото", callback_data="h_m"),
+        types.InlineKeyboardButton("Відео", callback_data="h_v"),
+        types.InlineKeyboardButton("Презентації", callback_data="h_p"),
+        types.InlineKeyboardButton("Новини", callback_data="h_n"),
+        types.InlineKeyboardButton("Відповіді", callback_data="h_a")
+    )
+    bot.send_message(cid, f"""
+<b>МОРСЬКИЙ ПРОФІЛЬ</b>
+ID: <code>1474031301</code>
+<b>Статистика:</b>
+Питань: {len(u.get('questions', []))}
+Фото: {len(u.get('media', []))}
+Відео: {len(u.get('video', []))}
+Презентацій: {len(u.get('pres', []))}
+Новин: {len(u.get('news', []))}
+Відповідей: {len(u.get('answers', []))}
+    """.strip(), reply_markup=kb)
 
-    if not REPLICATE_API_TOKEN:
-        stop_progress(cid)
-        bot.send_message(cid, "[Warning] Replicate API не налаштований.", reply_markup=main_menu())
-        return
-
-    try:
-        output = replicate.run(
-            "black-forest-labs/flux-schnell",  # ПРАВИЛЬНА МОДЕЛЬ
-            input={
-                "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality",
-                "num_outputs": 1,
-                "width": 1024,
-                "height": 1024,
-                "num_inference_steps": 4
-            }
-        )
-        img_url = output[0]
-        stop_progress(cid)
-        bot.send_photo(cid, img_url, caption=f"<b>ФОТО:</b> {prompt}", reply_markup=main_menu())
-    except Exception as e:
-        stop_progress(cid)
-        bot.send_message(cid, f"[Error] Помилка: {str(e)[:100]}", reply_markup=main_menu())
-
-# === ВІДЕО ===
-def generate_video(m):
-    cid = m.chat.id
-    prompt = m.text.strip().strip('«»"')
-    user_data.setdefault(cid, {})["video"].append(prompt)
-    start_progress(cid, "СТВОРЮЮ ВІДЕО")
-
-    if not REPLICATE_API_TOKEN:
-        stop_progress(cid)
-        bot.send_message(cid, "[Warning] Replicate API не налаштований.", reply_markup=main_menu())
-        return
-
-    try:
-        image_output = replicate.run(
-            "black-forest-labs/flux-schnell",
-            input={
-                "prompt": prompt + ", cinematic keyframe, 4K, ultra realistic, sharp",
-                "num_outputs": 1,
-                "width": 1024,
-                "height": 576,
-                "num_inference_steps": 4
-            }
-        )
-        image_url = image_output[0]
-
-        video_output = replicate.run(
-            "stability-ai/stable-video-diffusion-img2vid-xt",
-            input={
-                "image": image_url,
-                "motion_bucket_id": 127,
-                "fps": 7,
-                "noise_aug_strength": 0.02
-            }
-        )
-        video_url = video_output[0]
-        stop_progress(cid)
-        bot.send_video(cid, video_url, caption=f"<b>ВІДЕО:</b> {prompt}", reply_markup=main_menu())
-    except Exception as e:
-        stop_progress(cid)
-        bot.send_message(cid, f"[Error] Помилка відео: {str(e)[:100]}", reply_markup=main_menu())
-
-# ======== НАЗАД ========
-@bot.message_handler(func=lambda m: m.text == "Назад")
-def back(m):
-    bot.send_message(m.chat.id, "<b>ГОЛОВНЕ МЕНЮ</b>", reply_markup=main_menu())
-
-# ======== FLASK WEBHOOK ========
-@app.route('/', methods=['GET', 'HEAD'])
-def index():
-    return '', 200
-
-@app.route(WEBHOOK_PATH, methods=["POST"])
-def webhook():
-    if request.headers.get("content-type") == "application/json":
-        json_string = request.get_data().decode("utf-8")
-        print(f"ОТРИМАНО UPDATE: {json_string[:200]}")
-        update = telebot.types.Update.de_json(json_string)
-        if update:
-            bot.process_new_updates([update])
-        return "OK", 200
-    return "", 400
-
-# ======== АВТО-WEBHOOK ========
-try:
-    info = bot.get_webhook_info()
-    if info.url != WEBHOOK_URL:
-        bot.remove_webhook()
-        time.sleep(1)
-        bot.set_webhook(url=WEBHOOK_URL, drop_pending_updates=True)
-        print(f"Webhook встановлено: {WEBHOOK_URL}")
-    else:
-        print(f"Webhook активний: {info.url}")
-except Exception as e:
-    print(f"Помилка webhook: {e}")
-
-print("Бот запущено! Слава ЗСУ!")
+@bot.callback_query_handler(func=lambda c: c.data.startswith("h_"))
+def history(c):
+    cid = c.message.chat.id
+    t = c.data[2:]
+    maps = {"q":"questions
