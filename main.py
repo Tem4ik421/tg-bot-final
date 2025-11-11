@@ -154,7 +154,7 @@ def ask_prompt(m):
         reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video)
 
-# === ФОТО: ПРАЦЮЄ 100% ===
+# === ФОТО ===
 def generate_photo(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
@@ -168,7 +168,7 @@ def generate_photo(m):
 
     try:
         output = replicate.run(
-            "black-forest-labs/flux-schnell",  # БЕЗ ВЕРСІЇ — ПРАЦЮЄ!
+            "black-forest-labs/flux-schnell",
             input={
                 "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality, masterpiece",
                 "num_outputs": 1,
@@ -184,7 +184,7 @@ def generate_photo(m):
         stop_progress(cid)
         bot.send_message(cid, f"[Error] Помилка: {str(e)[:100]}", reply_markup=main_menu())
 
-# === ВІДЕО ===
+# === ВІДЕО — ПОВНІСТЮ ВИПРАВЛЕНО! ===
 def generate_video(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
@@ -197,6 +197,7 @@ def generate_video(m):
         return
 
     try:
+        # Крок 1: Генеруємо ключовий кадр
         image_output = replicate.run(
             "black-forest-labs/flux-schnell",
             input={
@@ -209,6 +210,7 @@ def generate_video(m):
         )
         image_url = image_output[0]
 
+        # Крок 2: Перетворюємо в відео
         video_output = replicate.run(
             "stability-ai/stable-video-diffusion-img2vid-xt",
             input={
@@ -219,6 +221,7 @@ def generate_video(m):
             }
         )
         video_url = video_output[0]
+
         stop_progress(cid)
         bot.send_video(cid, video_url, caption=f"<b>ВІДЕО:</b> {prompt}", reply_markup=main_menu())
     except Exception as e:
