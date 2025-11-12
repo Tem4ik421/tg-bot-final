@@ -10,7 +10,7 @@ from fpdf import FPDF
 from io import BytesIO
 from groq import Groq
 import replicate
-from gradio_client import Client # <-- 1. ДОДАНО НОВИЙ ІМПОРТ
+from gradio_client import Client # Переконайся, що 'gradio_client' є у requirements.txt
 
 # ======== КОНФІГ ========
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -83,12 +83,26 @@ def main_menu():
     k.row("Створити презентацію", "Відповіді на питання")
     return k
 
+# -------------------------------------------------------------------
+# ✅ НОВА ЗАХИСНА ФУНКЦІЯ
+# -------------------------------------------------------------------
+def ensure_user_data(cid):
+    """Гарантує, що повна структура даних існує для користувача."""
+    # 1. Додає користувача, якщо його не існує
+    user_data.setdefault(cid, {})
+    
+    # 2. Додає всі необхідні ключі (списки), якщо вони відсутні
+    keys_to_init = ["questions", "media", "video", "pres", "news", "answers"]
+    for key in keys_to_init:
+        user_data[cid].setdefault(key, [])
+# -------------------------------------------------------------------
+
 # ======== /start ========
 @bot.message_handler(commands=["start"])
 def start(m):
     cid = m.chat.id
-    if cid not in user_data:
-        user_data[cid] = {"questions": [], "media": [], "video": [], "pres": [], "news": [], "answers": []}
+    # Використовуємо нову функцію, щоб створити або оновити профіль
+    ensure_user_data(cid) 
     bot.send_message(cid,
         "<b>КАПІТАН @Tem4ik4751 НА МОСТИКУ!</b>\n"
         "ID: <code>1474031301</code>\n"
@@ -100,7 +114,8 @@ def start(m):
 @bot.message_handler(func=lambda m: m.text == "Профиль")
 def profile(m):
     cid = m.chat.id
-    u = user_data.get(cid, {})
+    ensure_user_data(cid) # Про всяк випадок
+    u = user_data.get(cid) # Тепер ми впевнені, що 'u' не порожній
     kb = types.InlineKeyboardMarkup(row_width=2)
     kb.add(
         types.InlineKeyboardButton("Питання", callback_data="h_q"),
@@ -125,6 +140,7 @@ ID: <code>1474031301</code>
 @bot.callback_query_handler(func=lambda c: c.data.startswith("h_"))
 def history(c):
     cid = c.message.chat.id
+    ensure_user_data(cid) # Про всяк випадок
     t = c.data[2:]
     maps = {"q":"questions", "m":"media", "v":"video", "p":"pres", "n":"news", "a":"answers"}
     items = user_data.get(cid, {}).get(maps.get(t, ""), [])[-10:]
@@ -155,60 +171,60 @@ def ask_prompt(m):
         reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video)
 
-# -------------------------------------------------------------------
-# === 2. ФОТО (ПОВНІСТЮ ЗАМІНЕНО НА GRADIO) ===
-# -------------------------------------------------------------------
+# === ФОТО (ВИПРАВЛЕНО ЗБЕРЕЖЕННЯ ІСТОРІЇ) ===
 def generate_photo(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
-    user_data.setdefault(cid, {})["media"].append(prompt)
-    start_progress(cid, "ГЕНЕРУЮ ФОТО (FLUX)") # Оновив текст завантаження
+    
+    # -------------------------------------------------------------------
+    # ✅ ВИПРАВЛЕННЯ KeyError
+    # -------------------------------------------------------------------
+    ensure_user_data(cid) # Гарантуємо, що user_data[cid]["media"] існує
+    user_data[cid]["media"].append(prompt) # Тепер це безпечно
+    # -------------------------------------------------------------------
+
+    start_progress(cid, "ГЕНЕРУЮ ФОТО (FLUX)") 
 
     try:
-        # Ініціалізуємо клієнт для Gradio
         client = Client("NihalGazi/FLUX-Unlimited")
-        
-        # Зберігаємо покращений промпт, як у тебе і було
         full_prompt = prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality, masterpiece"
         
-        # Викликаємо API згідно з документацією
-        # (width, height, seed, randomize, server_choice)
         result = client.predict(
             prompt=full_prompt,
-            width=1024,  # Використовуємо твої налаштування 1024
-            height=1024, # Використовуємо твої налаштування 1024
+            width=1024,
+            height=1024,
             seed=0,
             randomize=True,
             server_choice="Google US Server",
             api_name="/generate_image"
         )
         
-        # Gradio-клієнт повертає шлях до ТИМЧАСОВОГО ФАЙЛУ
         img_filepath = result[0]
-        
-        # Зупиняємо анімацію
         stop_progress(cid)
         
-        # Відкриваємо файл (у бінарному режимі "rb") і відправляємо його
         with open(img_filepath, "rb") as photo:
             bot.send_photo(cid, photo, caption=f"<b>ФОТО:</b> {prompt}", reply_markup=main_menu())
         
-        # Видаляємо тимчасовий файл, щоб не забивати диск на хостингу
         if os.path.exists(img_filepath):
             os.remove(img_filepath)
 
     except Exception as e:
         stop_progress(cid)
-        # Повертаємо помилку
         bot.send_message(cid, f"[Error] Помилка Gradio: {str(e)[:100]}", reply_markup=main_menu())
 
 
-# === ВІДЕО (НЕ ЗМІНЕНО) ===
-# (Залишаємо Replicate, оскільки він повертає URL, необхідний для img2vid)
+# === ВІДЕО (ВИПРАВЛЕНО ЗБЕРЕЖЕННЯ ІСТОРІЇ) ===
 def generate_video(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
-    user_data.setdefault(cid, {})["video"].append(prompt)
+
+    # -------------------------------------------------------------------
+    # ✅ ВИПРАВЛЕННЯ KeyError
+    # -------------------------------------------------------------------
+    ensure_user_data(cid) # Гарантуємо, що user_data[cid]["video"] існує
+    user_data[cid]["video"].append(prompt) # Тепер це безпечно
+    # -------------------------------------------------------------------
+    
     start_progress(cid, "СТВОРЮЮ ВІДЕО")
 
     if not REPLICATE_API_TOKEN:
@@ -217,7 +233,7 @@ def generate_video(m):
         return
 
     try:
-        # Крок 1: Генеруємо ключовий кадр (через Replicate)
+        # Крок 1: Генеруємо ключовий кадр
         image_output = replicate.run(
             "black-forest-labs/flux-schnell",
             input={
@@ -253,10 +269,11 @@ def generate_video(m):
 def back(m):
     bot.send_message(m.chat.id, "<b>ГОЛОВНЕ МЕНЮ</b>", reply_markup=main_menu())
 
-# ======== МОРСЬКІ НОВИНИ ========
+# ======== МОРСЬКІ НОВИНИ (ВИПРАВЛЕНО ЗБЕРЕЖЕННЯ ІСТОРІЇ) ========
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
+    ensure_user_data(cid) # Гарантуємо, що user_data[cid]["news"] існує
     start_progress(cid, "ШУКАЮ НОВИНИ")
     if not groq_client:
         stop_progress(cid)
@@ -270,12 +287,18 @@ def news(m):
         )
         stop_progress(cid)
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
-        user_data.setdefault(cid, {})["news"].append(time.strftime("%H:%M"))
+        
+        # -------------------------------------------------------------------
+        # ✅ ВИПРАВЛЕННЯ KeyError
+        # -------------------------------------------------------------------
+        user_data[cid]["news"].append(time.strftime("%H:%M")) # Тепер це безпечно
+        # -------------------------------------------------------------------
+
     except Exception as e:
         stop_progress(cid)
         bot.send_message(cid, "[Error] GROQ тимчасово недоступний.", reply_markup=main_menu())
 
-# ======== ПРЕЗЕНТАЦІЯ ========
+# ======== ПРЕЗЕНТАЦІЯ (ВИПРАВЛЕНО ЗБЕРЕЖЕННЯ ІСТОРІЇ) ========
 @bot.message_handler(func=lambda m: m.text == "Створити презентацію")
 def create_pres(m):
     bot.send_message(m.chat.id, "<b>ТЕМА ПРЕЗЕНТАЦІЇ?</b>\nПриклад: <code>Майбутнє штучного інтелекту</code>", reply_markup=types.ReplyKeyboardRemove())
@@ -284,7 +307,14 @@ def create_pres(m):
 def gen_pres(m):
     cid = m.chat.id
     topic = m.text.strip()
-    user_data.setdefault(cid, {})["pres"].append(topic)
+    
+    # -------------------------------------------------------------------
+    # ✅ ВИПРАВЛЕННЯ KeyError
+    # -------------------------------------------------------------------
+    ensure_user_data(cid) # Гарантуємо, що user_data[cid]["pres"] існує
+    user_data[cid]["pres"].append(topic) # Тепер це безпечно
+    # -------------------------------------------------------------------
+    
     start_progress(cid, "СТВОРЮЮ PDF")
     if not groq_client:
         stop_progress(cid)
@@ -313,7 +343,7 @@ def gen_pres(m):
         stop_progress(cid)
         bot.send_message(cid, "[Error] Помилка створення PDF.", reply_markup=main_menu())
 
-# ======== ПИТАННЯ ========
+# ======== ПИТАННЯ (ВИПРАВЛЕНО ЗБЕРЕЖЕННЯ ІСТОРІЇ) ========
 @bot.message_handler(func=lambda m: m.text == "Відповіді на питання")
 def ask_q(m):
     bot.send_message(m.chat.id, "<b>ЗАДАЙ ПИТАННЯ:</b>\nПриклад: <code>Коли я стану мільйонером?</code>", reply_markup=types.ReplyKeyboardRemove())
@@ -322,7 +352,14 @@ def ask_q(m):
 def answer_q(m):
     cid = m.chat.id
     q = m.text.strip()
-    user_data.setdefault(cid, {})["questions"].append(q)
+    
+    # -------------------------------------------------------------------
+    # ✅ ВИПРАВЛЕННЯ KeyError
+    # -------------------------------------------------------------------
+    ensure_user_data(cid) # Гарантуємо, що user_data[cid]["questions"] існує
+    user_data[cid]["questions"].append(q) # Тепер це безпечно
+    # -------------------------------------------------------------------
+    
     start_progress(cid, "ДУМАЮ...")
     if not groq_client:
         stop_progress(cid)
