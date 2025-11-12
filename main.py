@@ -84,16 +84,15 @@ def main_menu():
     return k
 
 # -------------------------------------------------------------------
-# ✅ НОВА ФУНКЦІЯ АВТО-ПЕРЕКЛАДУ (через Groq)
+# ✅ ФУНКЦІЯ АВТО-ПЕРЕКЛАДУ
 # -------------------------------------------------------------------
 def translate_to_english(text_to_translate):
     """Перекладає текст на англійську, використовуючи Groq (Llama 3.1 8B)."""
     if not groq_client:
         print("Попередження: Groq API не налаштований, переклад неможливий.")
-        return text_to_translate # Повертаємо оригінал, якщо Groq немає
+        return text_to_translate 
 
     try:
-        # Використовуємо найшвидшу модель Llama 3.1 8B для миттєвого перекладу
         completion = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
@@ -115,13 +114,13 @@ def translate_to_english(text_to_translate):
             print(f"Переклад: '{text_to_translate}' -> '{translated_text}'")
             return translated_text
         else:
-            return text_to_translate # Повертаємо оригінал у разі дивної відповіді
+            return text_to_translate
     except Exception as e:
         print(f"Помилка перекладу: {e}")
-        return text_to_translate # Повертаємо оригінал у разі помилки
+        return text_to_translate
 
 # -------------------------------------------------------------------
-# ✅ НОВА ЗАХИСНА ФУНКЦІЯ (з минулого разу)
+# ✅ ЗАХИСНА ФУНКЦІЯ
 # -------------------------------------------------------------------
 def ensure_user_data(cid):
     """Гарантує, що повна структура даних існує для користувача."""
@@ -157,6 +156,9 @@ def profile(m):
         types.InlineKeyboardButton("Новини", callback_data="h_n"),
         types.InlineKeyboardButton("Відповіді", callback_data="h_a")
     )
+    # -------------------------------------------------------------------
+    # ✅ ВИПРАВЛЕНО SYNTAXERROR: прибрано "... (опущены...)"
+    # -------------------------------------------------------------------
     bot.send_message(cid, f"""
 <b>МОРСЬКИЙ ПРОФІЛЬ</b>
 ID: <code>1474031301</code>
@@ -164,7 +166,9 @@ ID: <code>1474031301</code>
 Питань: {len(u.get('questions', []))}
 Фото: {len(u.get('media', []))}
 Відео: {len(u.get('video', []))}
-Презентацій: {len(u.get('pres', ... (опущены остальные строки кода для краткости) ...
+Презентацій: {len(u.get('pres', []))}
+Новин: {len(u.get('news', []))}
+Відповідей: {len(u.get('answers', []))}
     """.strip(), reply_markup=kb)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("h_"))
@@ -201,29 +205,24 @@ def ask_prompt(m):
         reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video)
 
-# -------------------------------------------------------------------
-# === ФОТО (ДОДАНО АВТО-ПЕРЕКЛАД) ===
-# -------------------------------------------------------------------
+# === ФОТО ===
 def generate_photo(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
     
     ensure_user_data(cid) 
-    user_data[cid]["media"].append(prompt) # Зберігаємо ОРИГІНАЛЬНИЙ промпт
+    user_data[cid]["media"].append(prompt) 
     
-    # Оновлюємо текст завантаження
     start_progress(cid, "ПЕРЕКЛАДАЮ ТА ГЕНЕРУЮ ФОТО (FLUX)") 
 
     try:
-        # --- КРОК 1: ПЕРЕКЛАД ---
         translated_prompt = translate_to_english(prompt)
         
-        # --- КРОК 2: ГЕНЕРАЦІЯ ---
         client = Client("NihalGazi/FLUX-Unlimited")
         full_prompt = translated_prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality, masterpiece"
         
         result = client.predict(
-            prompt=full_prompt, # Використовуємо перекладений промпт
+            prompt=full_prompt,
             width=1024,
             height=1024,
             seed=0,
@@ -236,7 +235,6 @@ def generate_photo(m):
         stop_progress(cid)
         
         with open(img_filepath, "rb") as photo:
-            # У підписі показуємо ОРИГІНАЛЬНИЙ промпт користувача
             bot.send_photo(cid, photo, caption=f"<b>ФОТО:</b> {prompt}", reply_markup=main_menu())
         
         if os.path.exists(img_filepath):
@@ -247,17 +245,14 @@ def generate_photo(m):
         bot.send_message(cid, f"[Error] Помилка Gradio: {str(e)[:100]}", reply_markup=main_menu())
 
 
-# -------------------------------------------------------------------
-# === ВІДЕО (ДОДАНО АВТО-ПЕРЕКЛАД) ===
-# -------------------------------------------------------------------
+# === ВІДЕО ===
 def generate_video(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
 
     ensure_user_data(cid) 
-    user_data[cid]["video"].append(prompt) # Зберігаємо ОРИГІНАЛЬНИЙ промпт
+    user_data[cid]["video"].append(prompt) 
     
-    # Оновлюємо текст завантаження
     start_progress(cid, "ПЕРЕКЛАДАЮ ТА СТВОРЮЮ ВІДЕО")
 
     if not REPLICATE_API_TOKEN:
@@ -266,14 +261,11 @@ def generate_video(m):
         return
 
     try:
-        # --- КРОК 1: ПЕРЕКЛАД ---
         translated_prompt = translate_to_english(prompt)
 
-        # --- КРОК 2: ГЕНЕРАЦІЯ КЛЮЧОВОГО КАДРУ ---
         image_output = replicate.run(
             "black-forest-labs/flux-schnell",
             input={
-                # Використовуємо перекладений промпт
                 "prompt": translated_prompt + ", cinematic keyframe, 4K, ultra realistic, sharp, masterpiece",
                 "num_outputs": 1,
                 "width": 1024,
@@ -283,7 +275,6 @@ def generate_video(m):
         )
         image_url = image_output[0]
 
-        # --- КРОК 3: ПЕРЕТВОРЕННЯ В ВІДЕО ---
         video_output = replicate.run(
             "stability-ai/stable-video-diffusion-img2vid-xt",
             input={
@@ -296,7 +287,6 @@ def generate_video(m):
         video_url = video_output[0]
 
         stop_progress(cid)
-        # У підписі показуємо ОРИГІНАЛЬНИЙ промпт
         bot.send_video(cid, video_url, caption=f"<b>ВІДЕО:</b> {prompt}", reply_markup=main_menu())
     except Exception as e:
         stop_progress(cid)
@@ -311,7 +301,7 @@ def back(m):
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
-    ensure_user_data(cid)
+    ensure_user_data(cid) 
     start_progress(cid, "ШУКАЮ НОВИНИ")
     if not groq_client:
         stop_progress(cid)
