@@ -10,6 +10,7 @@ from fpdf import FPDF
 from io import BytesIO
 from groq import Groq
 import replicate
+from gradio_client import Client # <-- 1. ДОДАНО НОВИЙ ІМПОРТ
 
 # ======== КОНФІГ ========
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -154,37 +155,56 @@ def ask_prompt(m):
         reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video)
 
-# === ФОТО ===
+# -------------------------------------------------------------------
+# === 2. ФОТО (ПОВНІСТЮ ЗАМІНЕНО НА GRADIO) ===
+# -------------------------------------------------------------------
 def generate_photo(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
     user_data.setdefault(cid, {})["media"].append(prompt)
-    start_progress(cid, "ГЕНЕРУЮ ФОТО")
-
-    if not REPLICATE_API_TOKEN:
-        stop_progress(cid)
-        bot.send_message(cid, "[Warning] Replicate API не налаштований.", reply_markup=main_menu())
-        return
+    start_progress(cid, "ГЕНЕРУЮ ФОТО (FLUX)") # Оновив текст завантаження
 
     try:
-        output = replicate.run(
-            "black-forest-labs/flux-schnell",
-            input={
-                "prompt": prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality, masterpiece",
-                "num_outputs": 1,
-                "width": 1024,
-                "height": 1024,
-                "num_inference_steps": 4
-            }
+        # Ініціалізуємо клієнт для Gradio
+        client = Client("NihalGazi/FLUX-Unlimited")
+        
+        # Зберігаємо покращений промпт, як у тебе і було
+        full_prompt = prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality, masterpiece"
+        
+        # Викликаємо API згідно з документацією
+        # (width, height, seed, randomize, server_choice)
+        result = client.predict(
+            prompt=full_prompt,
+            width=1024,  # Використовуємо твої налаштування 1024
+            height=1024, # Використовуємо твої налаштування 1024
+            seed=0,
+            randomize=True,
+            server_choice="Google US Server",
+            api_name="/generate_image"
         )
-        img_url = output[0]
+        
+        # Gradio-клієнт повертає шлях до ТИМЧАСОВОГО ФАЙЛУ
+        img_filepath = result[0]
+        
+        # Зупиняємо анімацію
         stop_progress(cid)
-        bot.send_photo(cid, img_url, caption=f"<b>ФОТО:</b> {prompt}", reply_markup=main_menu())
+        
+        # Відкриваємо файл (у бінарному режимі "rb") і відправляємо його
+        with open(img_filepath, "rb") as photo:
+            bot.send_photo(cid, photo, caption=f"<b>ФОТО:</b> {prompt}", reply_markup=main_menu())
+        
+        # Видаляємо тимчасовий файл, щоб не забивати диск на хостингу
+        if os.path.exists(img_filepath):
+            os.remove(img_filepath)
+
     except Exception as e:
         stop_progress(cid)
-        bot.send_message(cid, f"[Error] Помилка: {str(e)[:100]}", reply_markup=main_menu())
+        # Повертаємо помилку
+        bot.send_message(cid, f"[Error] Помилка Gradio: {str(e)[:100]}", reply_markup=main_menu())
 
-# === ВІДЕО — ПОВНІСТЮ ВИПРАВЛЕНО! ===
+
+# === ВІДЕО (НЕ ЗМІНЕНО) ===
+# (Залишаємо Replicate, оскільки він повертає URL, необхідний для img2vid)
 def generate_video(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
@@ -197,7 +217,7 @@ def generate_video(m):
         return
 
     try:
-        # Крок 1: Генеруємо ключовий кадр
+        # Крок 1: Генеруємо ключовий кадр (через Replicate)
         image_output = replicate.run(
             "black-forest-labs/flux-schnell",
             input={
