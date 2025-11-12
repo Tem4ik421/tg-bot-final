@@ -3,6 +3,8 @@ import os
 import time
 import threading
 import requests
+import json
+import re
 from flask import Flask, request
 import telebot
 from telebot import types
@@ -41,10 +43,13 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# ======== БІЛА ПРОГРЕС-ПОЛОСКА (1% КРОК) ========
+# ======== ПРОГРЕС-ПОЛОСКА (ОНОВЛЕНО) ========
 def progress_bar(percent, width=20):
     filled = int(width * percent // 100)
-    bar = "█" * filled + "░" * (width - filled)
+    # -------------------------------------------------------------------
+    # ✅ ОНОВЛЕНО: Використовуємо '·' для "порожнього" місця
+    # -------------------------------------------------------------------
+    bar = "█" * filled + "·" * (width - filled)
     return f"<code>{bar}</code> <b>{percent}%</b>"
 
 def start_progress(cid, text="Генерую"):
@@ -75,17 +80,18 @@ def stop_progress(cid):
             pass
         loading.pop(cid, None)
 
-# ======== ГОЛОВНЕ МЕНЮ ========
+# ======== ГОЛОВНЕ МЕНЮ (ОНОВЛЕНО) ========
 def main_menu():
     k = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    k.row("Профиль")
-    k.row("Генератор Медіа", "Морські новини")
-    k.row("Створити презентацію", "Відповіді на питання")
+    # -------------------------------------------------------------------
+    # ✅ ОНОВЛЕНО: Додано емодзі згідно з твоїм запитом
+    # -------------------------------------------------------------------
+    k.row("👤 Профиль") # 1-й ряд
+    k.row("🖼️ Генератор Медіа", "⚓️ Морські новини") # 2-й ряд
+    k.row("🎨 Створити презентацію", "❓ Відповіді на питання") # 3-й ряд
     return k
 
-# -------------------------------------------------------------------
-# ✅ ФУНКЦІЯ АВТО-ПЕРЕКЛАДУ
-# -------------------------------------------------------------------
+# ======== ФУНКЦІЯ АВТО-ПЕРЕКЛАДУ ========
 def translate_to_english(text_to_translate):
     """Перекладає текст на англійську, використовуючи Groq (Llama 3.1 8B)."""
     if not groq_client:
@@ -119,9 +125,7 @@ def translate_to_english(text_to_translate):
         print(f"Помилка перекладу: {e}")
         return text_to_translate
 
-# -------------------------------------------------------------------
-# ✅ ЗАХИСНА ФУНКЦІЯ
-# -------------------------------------------------------------------
+# ======== ЗАХИСНА ФУНКЦІЯ ========
 def ensure_user_data(cid):
     """Гарантує, що повна структура даних існує для користувача."""
     user_data.setdefault(cid, {})
@@ -142,7 +146,7 @@ def start(m):
         reply_markup=main_menu())
 
 # ======== ПРОФІЛЬ ========
-@bot.message_handler(func=lambda m: m.text == "Профиль")
+@bot.message_handler(func=lambda m: m.text == "👤 Профиль")
 def profile(m):
     cid = m.chat.id
     ensure_user_data(cid) 
@@ -156,9 +160,6 @@ def profile(m):
         types.InlineKeyboardButton("Новини", callback_data="h_n"),
         types.InlineKeyboardButton("Відповіді", callback_data="h_a")
     )
-    # -------------------------------------------------------------------
-    # ✅ ВИПРАВЛЕНО SYNTAXERROR: прибрано "... (опущены...)"
-    # -------------------------------------------------------------------
     bot.send_message(cid, f"""
 <b>МОРСЬКИЙ ПРОФІЛЬ</b>
 ID: <code>1474031301</code>
@@ -188,7 +189,7 @@ def history(c):
     bot.send_message(cid, text, reply_markup=main_menu())
 
 # ======== ГЕНЕРАТОР МЕДІА ========
-@bot.message_handler(func=lambda m: m.text == "Генератор Медіа")
+@bot.message_handler(func=lambda m: m.text == "🖼️ Генератор Медіа")
 def media_menu(m):
     k = types.ReplyKeyboardMarkup(resize_keyboard=True)
     k.row("Фото", "Відео")
@@ -205,13 +206,13 @@ def ask_prompt(m):
         reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video)
 
-# === ФОТО ===
+# === ФОТО (Gradio) ===
 def generate_photo(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
     
     ensure_user_data(cid) 
-    user_data[cid]["media"].append(prompt) 
+    user_data[cid]["media"].append(prompt)
     
     start_progress(cid, "ПЕРЕКЛАДАЮ ТА ГЕНЕРУЮ ФОТО (FLUX)") 
 
@@ -245,7 +246,7 @@ def generate_photo(m):
         bot.send_message(cid, f"[Error] Помилка Gradio: {str(e)[:100]}", reply_markup=main_menu())
 
 
-# === ВІДЕО ===
+# === ВІДЕО (Replicate) ===
 def generate_video(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
@@ -298,10 +299,10 @@ def back(m):
     bot.send_message(m.chat.id, "<b>ГОЛОВНЕ МЕНЮ</b>", reply_markup=main_menu())
 
 # ======== МОРСЬКІ НОВИНИ ========
-@bot.message_handler(func=lambda m: m.text == "Морські новини")
+@bot.message_handler(func=lambda m: m.text == "⚓️ Морські новини")
 def news(m):
     cid = m.chat.id
-    ensure_user_data(cid) 
+    ensure_user_data(cid)
     start_progress(cid, "ШУКАЮ НОВИНИ")
     if not groq_client:
         stop_progress(cid)
@@ -321,8 +322,38 @@ def news(m):
         stop_progress(cid)
         bot.send_message(cid, "[Error] GROQ тимчасово недоступний.", reply_markup=main_menu())
 
-# ======== ПРЕЗЕНТАЦІЯ ========
-@bot.message_handler(func=lambda m: m.text == "Створити презентацію")
+# -------------------------------------------------------------------
+# ✅ НОВА ДОПОМІЖНА ФУНКЦІЯ ГЕНЕРАЦІЇ ФОТО ДЛЯ СЛАЙДІВ
+# -------------------------------------------------------------------
+def generate_image_for_slide(prompt):
+    """Допоміжна функція для генерації 1 зображення через Replicate (повертає URL)."""
+    if not REPLICATE_API_TOKEN:
+        print("Replicate API не налаштований, зображення для слайду пропущено.")
+        return None
+    try:
+        # Перекладаємо промпт, оскільки Replicate також краще працює з англійською
+        translated_prompt = translate_to_english(prompt)
+        
+        # Використовуємо той самий 'flux-schnell'
+        image_output = replicate.run(
+            "black-forest-labs/flux-schnell",
+            input={
+                "prompt": translated_prompt + ", professional, journal style, high resolution, minimalist",
+                "num_outputs": 1,
+                "width": 1024, # Стандартний розмір
+                "height": 576,  # 16:9 для слайдів
+                "num_inference_steps": 4
+            }
+        )
+        return image_output[0] # Повертаємо URL
+    except Exception as e:
+        print(f"Помилка генерації фото для слайду: {e}")
+        return None
+
+# -------------------------------------------------------------------
+# ✅ ПРЕЗЕНТАЦІЯ (ПОВНІСТЮ ПЕРЕРОБЛЕНО)
+# -------------------------------------------------------------------
+@bot.message_handler(func=lambda m: m.text == "🎨 Створити презентацію")
 def create_pres(m):
     bot.send_message(m.chat.id, "<b>ТЕМА ПРЕЗЕНТАЦІЇ?</b>\nПриклад: <code>Майбутнє штучного інтелекту</code>", reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, gen_pres)
@@ -333,36 +364,165 @@ def gen_pres(m):
     ensure_user_data(cid)
     user_data[cid]["pres"].append(topic) 
     
-    start_progress(cid, "СТВОРЮЮ PDF")
+    # Використовуємо кастомний текст для завантаження
+    loading_msg = start_progress(cid, f"1/3: Створюю план '{topic}'")
+    
     if not groq_client:
         stop_progress(cid)
         bot.send_message(cid, "[Warning] GROQ API ключ не налаштований.", reply_markup=main_menu())
         return
+    if not REPLICATE_API_TOKEN:
+        stop_progress(cid)
+        bot.send_message(cid, "[Warning] Replicate API не налаштований.", reply_markup=main_menu())
+        return
+
     try:
+        # --- Крок 1: Отримуємо структуру від Groq ---
+        # Використовуємо 70B для якості та JSON
+        prompt = f"""
+        Створи структуру для 5-слайдової презентації в журнальному стилі на тему '{topic}'.
+        Дотримуйся чіткого JSON формату. Жодного тексту поза JSON.
+        'slide_text' має бути списком з 3-4 коротких пунктів (починаючи з '- ').
+        'image_prompt' має бути деталізованим описом англійською мовою для AI-генератора фото.
+        
+        Приклад JSON:
+        {{
+          "main_title": "Заголовок Презентації про {topic}",
+          "slides": [
+            {{
+              "slide_title": "Слайд 1: Вступ",
+              "slide_text": "- Пункт 1...\n- Пункт 2...\n- Пункт 3...",
+              "image_prompt": "high-quality cover art, professional, {topic}"
+            }},
+            {{
+              "slide_title": "Слайд 2: Основна частина",
+              "slide_text": "- Пункт 1...\n- Пункт 2...\n- Пункт 3...",
+              "image_prompt": "detailed photorealistic image related to slide 2 topic"
+            }},
+            {{
+              "slide_title": "Слайд 3: Деталі",
+              "slide_text": "- Пункт 1...\n- Пункт 2...\n- Пункт 3...",
+              "image_prompt": "symbolic or abstract image for slide 3 topic"
+            }},
+            {{
+              "slide_title": "Слайд 4: Приклади",
+              "slide_text": "- Пункт 1...\n- Пункт 2...\n- Пункт 3...",
+              "image_prompt": "a graph or infographic related to slide 4 topic"
+            }},
+            {{
+              "slide_title": "Слайд 5: Висновок",
+              "slide_text": "- Пункт 1...\n- Пункт 2...",
+              "image_prompt": "a hopeful or futuristic image for the conclusion"
+            }}
+          ]
+        }}
+        """
+        
         completion = groq_client.chat.completions.create(
             model="llama-3.1-70b-versatile",
-            messages=[{"role": "user", "content": f"Презентація: {topic}. 5 слайдів: заголовок, 3 пункти, фото-опис, колір фону (hex). Стиль National Geographic."}],
-            max_tokens=1500
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=4096,
+            temperature=0.2,
+            response_format={"type": "json_object"}
         )
+        
+        # --- Крок 2: Парсимо JSON ---
+        try:
+            # Очищуємо відповідь Groq
+            raw_json = re.search(r"\{.*\}", completion.choices[0].message.content, re.DOTALL).group(0)
+            data = json.loads(raw_json)
+            main_title = data.get("title", topic)
+            slides = data.get("slides", [])
+            if not slides: raise ValueError("Groq повернув порожні слайди")
+        except Exception as e:
+            raise ValueError(f"Не вдалося розпарсити JSON від Groq. {e}")
+
+        # --- Крок 3: Створюємо PDF та додаємо шрифти ---
         pdf = FPDF()
+        
+        # ВАЖЛИВО: Додай ці шрифти (DejaVuSans.ttf, DejaVuSans-Bold.ttf) до репозиторію!
+        try:
+            pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
+            pdf.add_font('DejaVu', 'B', 'DejaVuSans-Bold.ttf', uni=True)
+            font = 'DejaVu'
+        except RuntimeError:
+            print("ПОПЕРЕДЖЕННЯ: Шрифти DejaVu (DejaVuSans.ttf) не знайдено. Кирилиця не буде працювати.")
+            font = 'Arial' # Fallback
+            
+        # --- Крок 4: Титульна сторінка ---
         pdf.add_page()
-        pdf.set_font("Arial", "B", 16)
-        pdf.cell(0, 10, topic, ln=1, align="C")
-        pdf.ln(10)
-        pdf.set_font("Arial", "", 11)
-        for line in completion.choices[0].message.content.split("\n"):
-            if line.strip(): pdf.multi_cell(0, 7, line)
+        pdf.set_font(font, 'B', 24)
+        pdf.multi_cell(0, 15, f"\n{main_title}\n", align='C')
+        pdf.set_font(font, '', 14)
+        pdf.multi_cell(0, 10, f"Тема: {topic}", align='C')
+        
+        # Генеруємо титульне фото
+        bot.edit_message_text(f"<b>2/3: Генерую титульне фото...</b>\n{progress_bar(30)}", cid, loading_msg["msg_id"])
+        
+        cover_prompt = slides[0].get("image_prompt", f"cover art for {topic}")
+        cover_url = generate_image_for_slide(cover_prompt)
+        
+        if cover_url:
+            try:
+                img_data = requests.get(cover_url).content
+                temp_img_path = f"temp_cover_{cid}.jpg"
+                with open(temp_img_path, "wb") as f:
+                    f.write(img_data)
+                
+                # (190mm wide, 107mm tall for 16:9)
+                pdf.image(temp_img_path, x=10, y=pdf.get_y() + 10, w=190, h=107) 
+                os.remove(temp_img_path)
+            except Exception as e:
+                print(f"Не вдалося завантажити/вставити титульне фото: {e}")
+
+        # --- Крок 5: Слайди контенту ---
+        progress_step = 60 // len(slides) # 60% на генерацію
+        
+        for i, slide in enumerate(slides):
+            pdf.add_page()
+            pdf.set_font(font, 'B', 18)
+            pdf.multi_cell(0, 10, f'\n{slide.get("slide_title", "")}\n', align='C')
+            
+            # Оновлюємо прогрес
+            current_progress = 30 + (i+1) * progress_step
+            bot.edit_message_text(f"<b>3/3: Генерую слайд {i+1}/{len(slides)}...</b>\n{progress_bar(current_progress)}", cid, loading_msg["msg_id"])
+
+            # Генеруємо та вставляємо фото
+            img_url = generate_image_for_slide(slide.get("image_prompt", f"abstract image for {topic}"))
+            
+            if img_url:
+                try:
+                    img_data = requests.get(img_url).content
+                    temp_img_path = f"temp_slide_{cid}_{i}.jpg"
+                    with open(temp_img_path, "wb") as f:
+                        f.write(img_data)
+                    
+                    pdf.image(temp_img_path, x=10, y=pdf.get_y() + 5, w=190, h=107) 
+                    pdf.ln(107 + 5) # Відступ
+                    os.remove(temp_img_path)
+                except Exception as e:
+                    print(f"Не вдалося завантажити/вставити фото слайду {i}: {e}")
+            
+            # Додаємо текст
+            pdf.ln(5)
+            pdf.set_font(font, '', 12)
+            pdf.multi_cell(0, 8, slide.get("slide_text", ""))
+
+        # --- Крок 6: Відправка PDF ---
         buffer = BytesIO()
         pdf.output(buffer)
         buffer.seek(0)
         stop_progress(cid)
         bot.send_document(cid, buffer, caption=f"<b>{topic}</b>", filename=f"{topic[:50]}.pdf", reply_markup=main_menu())
+
     except Exception as e:
         stop_progress(cid)
-        bot.send_message(cid, "[Error] Помилка створення PDF.", reply_markup=main_menu())
+        print(f"Критична помилка gen_pres: {e}")
+        bot.send_message(cid, f"[Error] Помилка створення PDF: {str(e)[:1000]}", reply_markup=main_menu())
+
 
 # ======== ПИТАННЯ ========
-@bot.message_handler(func=lambda m: m.text == "Відповіді на питання")
+@bot.message_handler(func=lambda m: m.text == "❓ Відповіді на питання")
 def ask_q(m):
     bot.send_message(m.chat.id, "<b>ЗАДАЙ ПИТАННЯ:</b>\nПриклад: <code>Коли я стану мільйонером?</code>", reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, answer_q)
