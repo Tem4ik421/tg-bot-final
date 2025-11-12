@@ -43,12 +43,9 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# ======== ПРОГРЕС-ПОЛОСКА (ОНОВЛЕНО) ========
+# ======== ПРОГРЕС-ПОЛОСКА ========
 def progress_bar(percent, width=20):
     filled = int(width * percent // 100)
-    # -------------------------------------------------------------------
-    # ✅ ОНОВЛЕНО: Використовуємо '·' для "порожнього" місця
-    # -------------------------------------------------------------------
     bar = "█" * filled + "·" * (width - filled)
     return f"<code>{bar}</code> <b>{percent}%</b>"
 
@@ -80,15 +77,12 @@ def stop_progress(cid):
             pass
         loading.pop(cid, None)
 
-# ======== ГОЛОВНЕ МЕНЮ (ОНОВЛЕНО) ========
+# ======== ГОЛОВНЕ МЕНЮ ========
 def main_menu():
     k = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    # -------------------------------------------------------------------
-    # ✅ ОНОВЛЕНО: Додано емодзі згідно з твоїм запитом
-    # -------------------------------------------------------------------
-    k.row("👤 Профиль") # 1-й ряд
-    k.row("🖼️ Генератор Медіа", "⚓️ Морські новини") # 2-й ряд
-    k.row("🎨 Створити презентацію", "❓ Відповіді на питання") # 3-й ряд
+    k.row("👤 Профиль") 
+    k.row("🖼️ Генератор Медіа", "⚓️ Морські новини")
+    k.row("🎨 Створити презентацію", "❓ Відповіді на питання")
     return k
 
 # ======== ФУНКЦІЯ АВТО-ПЕРЕКЛАДУ ========
@@ -310,7 +304,10 @@ def news(m):
         return
     try:
         completion = groq_client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
+            # -------------------------------------------------------------------
+            # ✅ ВИПРАВЛЕНО: Замінено модель
+            # -------------------------------------------------------------------
+            model="llama-3.1-70b-4096",
             messages=[{"role": "user", "content": "3 найцікавіші новини про океан за 24 год: заголовок, 2 речення, фото, відео YouTube, джерело. Markdown."}],
             max_tokens=1000
         )
@@ -322,9 +319,7 @@ def news(m):
         stop_progress(cid)
         bot.send_message(cid, "[Error] GROQ тимчасово недоступний.", reply_markup=main_menu())
 
-# -------------------------------------------------------------------
-# ✅ НОВА ДОПОМІЖНА ФУНКЦІЯ ГЕНЕРАЦІЇ ФОТО ДЛЯ СЛАЙДІВ
-# -------------------------------------------------------------------
+# ======== ДОПОМІЖНА ФУНКЦІЯ ГЕНЕРАЦІЇ ФОТО ДЛЯ СЛАЙДІВ ========
 def generate_image_for_slide(prompt):
     """Допоміжна функція для генерації 1 зображення через Replicate (повертає URL)."""
     if not REPLICATE_API_TOKEN:
@@ -340,8 +335,8 @@ def generate_image_for_slide(prompt):
             input={
                 "prompt": translated_prompt + ", professional, journal style, high resolution, minimalist",
                 "num_outputs": 1,
-                "width": 1024, # Стандартний розмір
-                "height": 576,  # 16:9 для слайдів
+                "width": 1024,
+                "height": 576,
                 "num_inference_steps": 4
             }
         )
@@ -350,9 +345,7 @@ def generate_image_for_slide(prompt):
         print(f"Помилка генерації фото для слайду: {e}")
         return None
 
-# -------------------------------------------------------------------
-# ✅ ПРЕЗЕНТАЦІЯ (ПОВНІСТЮ ПЕРЕРОБЛЕНО)
-# -------------------------------------------------------------------
+# ======== ПРЕЗЕНТАЦІЯ ========
 @bot.message_handler(func=lambda m: m.text == "🎨 Створити презентацію")
 def create_pres(m):
     bot.send_message(m.chat.id, "<b>ТЕМА ПРЕЗЕНТАЦІЇ?</b>\nПриклад: <code>Майбутнє штучного інтелекту</code>", reply_markup=types.ReplyKeyboardRemove())
@@ -364,7 +357,6 @@ def gen_pres(m):
     ensure_user_data(cid)
     user_data[cid]["pres"].append(topic) 
     
-    # Використовуємо кастомний текст для завантаження
     loading_msg = start_progress(cid, f"1/3: Створюю план '{topic}'")
     
     if not groq_client:
@@ -378,7 +370,6 @@ def gen_pres(m):
 
     try:
         # --- Крок 1: Отримуємо структуру від Groq ---
-        # Використовуємо 70B для якості та JSON
         prompt = f"""
         Створи структуру для 5-слайдової презентації в журнальному стилі на тему '{topic}'.
         Дотримуйся чіткого JSON формату. Жодного тексту поза JSON.
@@ -419,7 +410,10 @@ def gen_pres(m):
         """
         
         completion = groq_client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
+            # -------------------------------------------------------------------
+            # ✅ ВИПРАВЛЕНО: Замінено модель
+            # -------------------------------------------------------------------
+            model="llama-3.1-70b-4096",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=4096,
             temperature=0.2,
@@ -428,10 +422,9 @@ def gen_pres(m):
         
         # --- Крок 2: Парсимо JSON ---
         try:
-            # Очищуємо відповідь Groq
             raw_json = re.search(r"\{.*\}", completion.choices[0].message.content, re.DOTALL).group(0)
             data = json.loads(raw_json)
-            main_title = data.get("title", topic)
+            main_title = data.get("main_title", topic) # Змінено з 'title' на 'main_title' згідно з промптом
             slides = data.get("slides", [])
             if not slides: raise ValueError("Groq повернув порожні слайди")
         except Exception as e:
@@ -440,14 +433,13 @@ def gen_pres(m):
         # --- Крок 3: Створюємо PDF та додаємо шрифти ---
         pdf = FPDF()
         
-        # ВАЖЛИВО: Додай ці шрифти (DejaVuSans.ttf, DejaVuSans-Bold.ttf) до репозиторію!
         try:
             pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
             pdf.add_font('DejaVu', 'B', 'DejaVuSans-Bold.ttf', uni=True)
             font = 'DejaVu'
         except RuntimeError:
             print("ПОПЕРЕДЖЕННЯ: Шрифти DejaVu (DejaVuSans.ttf) не знайдено. Кирилиця не буде працювати.")
-            font = 'Arial' # Fallback
+            font = 'Arial'
             
         # --- Крок 4: Титульна сторінка ---
         pdf.add_page()
@@ -456,7 +448,6 @@ def gen_pres(m):
         pdf.set_font(font, '', 14)
         pdf.multi_cell(0, 10, f"Тема: {topic}", align='C')
         
-        # Генеруємо титульне фото
         bot.edit_message_text(f"<b>2/3: Генерую титульне фото...</b>\n{progress_bar(30)}", cid, loading_msg["msg_id"])
         
         cover_prompt = slides[0].get("image_prompt", f"cover art for {topic}")
@@ -469,25 +460,22 @@ def gen_pres(m):
                 with open(temp_img_path, "wb") as f:
                     f.write(img_data)
                 
-                # (190mm wide, 107mm tall for 16:9)
                 pdf.image(temp_img_path, x=10, y=pdf.get_y() + 10, w=190, h=107) 
                 os.remove(temp_img_path)
             except Exception as e:
                 print(f"Не вдалося завантажити/вставити титульне фото: {e}")
 
         # --- Крок 5: Слайди контенту ---
-        progress_step = 60 // len(slides) # 60% на генерацію
+        progress_step = 60 // len(slides)
         
         for i, slide in enumerate(slides):
             pdf.add_page()
             pdf.set_font(font, 'B', 18)
             pdf.multi_cell(0, 10, f'\n{slide.get("slide_title", "")}\n', align='C')
             
-            # Оновлюємо прогрес
             current_progress = 30 + (i+1) * progress_step
             bot.edit_message_text(f"<b>3/3: Генерую слайд {i+1}/{len(slides)}...</b>\n{progress_bar(current_progress)}", cid, loading_msg["msg_id"])
 
-            # Генеруємо та вставляємо фото
             img_url = generate_image_for_slide(slide.get("image_prompt", f"abstract image for {topic}"))
             
             if img_url:
@@ -498,12 +486,11 @@ def gen_pres(m):
                         f.write(img_data)
                     
                     pdf.image(temp_img_path, x=10, y=pdf.get_y() + 5, w=190, h=107) 
-                    pdf.ln(107 + 5) # Відступ
+                    pdf.ln(107 + 5)
                     os.remove(temp_img_path)
                 except Exception as e:
                     print(f"Не вдалося завантажити/вставити фото слайду {i}: {e}")
             
-            # Додаємо текст
             pdf.ln(5)
             pdf.set_font(font, '', 12)
             pdf.multi_cell(0, 8, slide.get("slide_text", ""))
@@ -540,7 +527,10 @@ def answer_q(m):
         return
     try:
         completion = groq_client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
+            # -------------------------------------------------------------------
+            # ✅ ВИПРАВЛЕНО: Замінено модель
+            # -------------------------------------------------------------------
+            model="llama-3.1-70b-4096",
             messages=[{"role": "user", "content": f"Відповідь: {q}. 3 абзаци, фото, відео YouTube, 2 джерела."}],
             max_tokens=1200
         )
