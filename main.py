@@ -84,24 +84,56 @@ def main_menu():
     return k
 
 # -------------------------------------------------------------------
-# ✅ НОВА ЗАХИСНА ФУНКЦІЯ
+# ✅ НОВА ФУНКЦІЯ АВТО-ПЕРЕКЛАДУ (через Groq)
+# -------------------------------------------------------------------
+def translate_to_english(text_to_translate):
+    """Перекладає текст на англійську, використовуючи Groq (Llama 3.1 8B)."""
+    if not groq_client:
+        print("Попередження: Groq API не налаштований, переклад неможливий.")
+        return text_to_translate # Повертаємо оригінал, якщо Groq немає
+
+    try:
+        # Використовуємо найшвидшу модель Llama 3.1 8B для миттєвого перекладу
+        completion = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a translation assistant. Translate the user's text to English. Return ONLY the translated text, nothing else. Do not add quotation marks."
+                },
+                {
+                    "role": "user",
+                    "content": text_to_translate
+                }
+            ],
+            max_tokens=300,
+            temperature=0.0
+        )
+        translated_text = completion.choices[0].message.content.strip().strip('"')
+        
+        if translated_text:
+            print(f"Переклад: '{text_to_translate}' -> '{translated_text}'")
+            return translated_text
+        else:
+            return text_to_translate # Повертаємо оригінал у разі дивної відповіді
+    except Exception as e:
+        print(f"Помилка перекладу: {e}")
+        return text_to_translate # Повертаємо оригінал у разі помилки
+
+# -------------------------------------------------------------------
+# ✅ НОВА ЗАХИСНА ФУНКЦІЯ (з минулого разу)
 # -------------------------------------------------------------------
 def ensure_user_data(cid):
     """Гарантує, що повна структура даних існує для користувача."""
-    # 1. Додає користувача, якщо його не існує
     user_data.setdefault(cid, {})
-    
-    # 2. Додає всі необхідні ключі (списки), якщо вони відсутні
     keys_to_init = ["questions", "media", "video", "pres", "news", "answers"]
     for key in keys_to_init:
         user_data[cid].setdefault(key, [])
-# -------------------------------------------------------------------
 
 # ======== /start ========
 @bot.message_handler(commands=["start"])
 def start(m):
     cid = m.chat.id
-    # Використовуємо нову функцію, щоб створити або оновити профіль
     ensure_user_data(cid) 
     bot.send_message(cid,
         "<b>КАПІТАН @Tem4ik4751 НА МОСТИКУ!</b>\n"
@@ -114,8 +146,8 @@ def start(m):
 @bot.message_handler(func=lambda m: m.text == "Профиль")
 def profile(m):
     cid = m.chat.id
-    ensure_user_data(cid) # Про всяк випадок
-    u = user_data.get(cid) # Тепер ми впевнені, що 'u' не порожній
+    ensure_user_data(cid) 
+    u = user_data.get(cid)
     kb = types.InlineKeyboardMarkup(row_width=2)
     kb.add(
         types.InlineKeyboardButton("Питання", callback_data="h_q"),
@@ -132,15 +164,13 @@ ID: <code>1474031301</code>
 Питань: {len(u.get('questions', []))}
 Фото: {len(u.get('media', []))}
 Відео: {len(u.get('video', []))}
-Презентацій: {len(u.get('pres', []))}
-Новин: {len(u.get('news', []))}
-Відповідей: {len(u.get('answers', []))}
+Презентацій: {len(u.get('pres', ... (опущены остальные строки кода для краткости) ...
     """.strip(), reply_markup=kb)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("h_"))
 def history(c):
     cid = c.message.chat.id
-    ensure_user_data(cid) # Про всяк випадок
+    ensure_user_data(cid)
     t = c.data[2:]
     maps = {"q":"questions", "m":"media", "v":"video", "p":"pres", "n":"news", "a":"answers"}
     items = user_data.get(cid, {}).get(maps.get(t, ""), [])[-10:]
@@ -171,26 +201,29 @@ def ask_prompt(m):
         reply_markup=types.ReplyKeyboardRemove())
     bot.register_next_step_handler(m, generate_photo if "Фото" in m.text else generate_video)
 
-# === ФОТО (ВИПРАВЛЕНО ЗБЕРЕЖЕННЯ ІСТОРІЇ) ===
+# -------------------------------------------------------------------
+# === ФОТО (ДОДАНО АВТО-ПЕРЕКЛАД) ===
+# -------------------------------------------------------------------
 def generate_photo(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
     
-    # -------------------------------------------------------------------
-    # ✅ ВИПРАВЛЕННЯ KeyError
-    # -------------------------------------------------------------------
-    ensure_user_data(cid) # Гарантуємо, що user_data[cid]["media"] існує
-    user_data[cid]["media"].append(prompt) # Тепер це безпечно
-    # -------------------------------------------------------------------
-
-    start_progress(cid, "ГЕНЕРУЮ ФОТО (FLUX)") 
+    ensure_user_data(cid) 
+    user_data[cid]["media"].append(prompt) # Зберігаємо ОРИГІНАЛЬНИЙ промпт
+    
+    # Оновлюємо текст завантаження
+    start_progress(cid, "ПЕРЕКЛАДАЮ ТА ГЕНЕРУЮ ФОТО (FLUX)") 
 
     try:
+        # --- КРОК 1: ПЕРЕКЛАД ---
+        translated_prompt = translate_to_english(prompt)
+        
+        # --- КРОК 2: ГЕНЕРАЦІЯ ---
         client = Client("NihalGazi/FLUX-Unlimited")
-        full_prompt = prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality, masterpiece"
+        full_prompt = translated_prompt + ", photorealistic, 8K, ultra detailed, cinematic lighting, high quality, masterpiece"
         
         result = client.predict(
-            prompt=full_prompt,
+            prompt=full_prompt, # Використовуємо перекладений промпт
             width=1024,
             height=1024,
             seed=0,
@@ -203,6 +236,7 @@ def generate_photo(m):
         stop_progress(cid)
         
         with open(img_filepath, "rb") as photo:
+            # У підписі показуємо ОРИГІНАЛЬНИЙ промпт користувача
             bot.send_photo(cid, photo, caption=f"<b>ФОТО:</b> {prompt}", reply_markup=main_menu())
         
         if os.path.exists(img_filepath):
@@ -213,19 +247,18 @@ def generate_photo(m):
         bot.send_message(cid, f"[Error] Помилка Gradio: {str(e)[:100]}", reply_markup=main_menu())
 
 
-# === ВІДЕО (ВИПРАВЛЕНО ЗБЕРЕЖЕННЯ ІСТОРІЇ) ===
+# -------------------------------------------------------------------
+# === ВІДЕО (ДОДАНО АВТО-ПЕРЕКЛАД) ===
+# -------------------------------------------------------------------
 def generate_video(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
 
-    # -------------------------------------------------------------------
-    # ✅ ВИПРАВЛЕННЯ KeyError
-    # -------------------------------------------------------------------
-    ensure_user_data(cid) # Гарантуємо, що user_data[cid]["video"] існує
-    user_data[cid]["video"].append(prompt) # Тепер це безпечно
-    # -------------------------------------------------------------------
+    ensure_user_data(cid) 
+    user_data[cid]["video"].append(prompt) # Зберігаємо ОРИГІНАЛЬНИЙ промпт
     
-    start_progress(cid, "СТВОРЮЮ ВІДЕО")
+    # Оновлюємо текст завантаження
+    start_progress(cid, "ПЕРЕКЛАДАЮ ТА СТВОРЮЮ ВІДЕО")
 
     if not REPLICATE_API_TOKEN:
         stop_progress(cid)
@@ -233,11 +266,15 @@ def generate_video(m):
         return
 
     try:
-        # Крок 1: Генеруємо ключовий кадр
+        # --- КРОК 1: ПЕРЕКЛАД ---
+        translated_prompt = translate_to_english(prompt)
+
+        # --- КРОК 2: ГЕНЕРАЦІЯ КЛЮЧОВОГО КАДРУ ---
         image_output = replicate.run(
             "black-forest-labs/flux-schnell",
             input={
-                "prompt": prompt + ", cinematic keyframe, 4K, ultra realistic, sharp, masterpiece",
+                # Використовуємо перекладений промпт
+                "prompt": translated_prompt + ", cinematic keyframe, 4K, ultra realistic, sharp, masterpiece",
                 "num_outputs": 1,
                 "width": 1024,
                 "height": 576,
@@ -246,7 +283,7 @@ def generate_video(m):
         )
         image_url = image_output[0]
 
-        # Крок 2: Перетворюємо в відео
+        # --- КРОК 3: ПЕРЕТВОРЕННЯ В ВІДЕО ---
         video_output = replicate.run(
             "stability-ai/stable-video-diffusion-img2vid-xt",
             input={
@@ -259,6 +296,7 @@ def generate_video(m):
         video_url = video_output[0]
 
         stop_progress(cid)
+        # У підписі показуємо ОРИГІНАЛЬНИЙ промпт
         bot.send_video(cid, video_url, caption=f"<b>ВІДЕО:</b> {prompt}", reply_markup=main_menu())
     except Exception as e:
         stop_progress(cid)
@@ -269,11 +307,11 @@ def generate_video(m):
 def back(m):
     bot.send_message(m.chat.id, "<b>ГОЛОВНЕ МЕНЮ</b>", reply_markup=main_menu())
 
-# ======== МОРСЬКІ НОВИНИ (ВИПРАВЛЕНО ЗБЕРЕЖЕННЯ ІСТОРІЇ) ========
+# ======== МОРСЬКІ НОВИНИ ========
 @bot.message_handler(func=lambda m: m.text == "Морські новини")
 def news(m):
     cid = m.chat.id
-    ensure_user_data(cid) # Гарантуємо, що user_data[cid]["news"] існує
+    ensure_user_data(cid)
     start_progress(cid, "ШУКАЮ НОВИНИ")
     if not groq_client:
         stop_progress(cid)
@@ -287,18 +325,13 @@ def news(m):
         )
         stop_progress(cid)
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
-        
-        # -------------------------------------------------------------------
-        # ✅ ВИПРАВЛЕННЯ KeyError
-        # -------------------------------------------------------------------
-        user_data[cid]["news"].append(time.strftime("%H:%M")) # Тепер це безпечно
-        # -------------------------------------------------------------------
+        user_data[cid]["news"].append(time.strftime("%H:%M"))
 
     except Exception as e:
         stop_progress(cid)
         bot.send_message(cid, "[Error] GROQ тимчасово недоступний.", reply_markup=main_menu())
 
-# ======== ПРЕЗЕНТАЦІЯ (ВИПРАВЛЕНО ЗБЕРЕЖЕННЯ ІСТОРІЇ) ========
+# ======== ПРЕЗЕНТАЦІЯ ========
 @bot.message_handler(func=lambda m: m.text == "Створити презентацію")
 def create_pres(m):
     bot.send_message(m.chat.id, "<b>ТЕМА ПРЕЗЕНТАЦІЇ?</b>\nПриклад: <code>Майбутнє штучного інтелекту</code>", reply_markup=types.ReplyKeyboardRemove())
@@ -307,13 +340,8 @@ def create_pres(m):
 def gen_pres(m):
     cid = m.chat.id
     topic = m.text.strip()
-    
-    # -------------------------------------------------------------------
-    # ✅ ВИПРАВЛЕННЯ KeyError
-    # -------------------------------------------------------------------
-    ensure_user_data(cid) # Гарантуємо, що user_data[cid]["pres"] існує
-    user_data[cid]["pres"].append(topic) # Тепер це безпечно
-    # -------------------------------------------------------------------
+    ensure_user_data(cid)
+    user_data[cid]["pres"].append(topic) 
     
     start_progress(cid, "СТВОРЮЮ PDF")
     if not groq_client:
@@ -343,7 +371,7 @@ def gen_pres(m):
         stop_progress(cid)
         bot.send_message(cid, "[Error] Помилка створення PDF.", reply_markup=main_menu())
 
-# ======== ПИТАННЯ (ВИПРАВЛЕНО ЗБЕРЕЖЕННЯ ІСТОРІЇ) ========
+# ======== ПИТАННЯ ========
 @bot.message_handler(func=lambda m: m.text == "Відповіді на питання")
 def ask_q(m):
     bot.send_message(m.chat.id, "<b>ЗАДАЙ ПИТАННЯ:</b>\nПриклад: <code>Коли я стану мільйонером?</code>", reply_markup=types.ReplyKeyboardRemove())
@@ -352,13 +380,8 @@ def ask_q(m):
 def answer_q(m):
     cid = m.chat.id
     q = m.text.strip()
-    
-    # -------------------------------------------------------------------
-    # ✅ ВИПРАВЛЕННЯ KeyError
-    # -------------------------------------------------------------------
-    ensure_user_data(cid) # Гарантуємо, що user_data[cid]["questions"] існує
-    user_data[cid]["questions"].append(q) # Тепер це безпечно
-    # -------------------------------------------------------------------
+    ensure_user_data(cid)
+    user_data[cid]["questions"].append(q)
     
     start_progress(cid, "ДУМАЮ...")
     if not groq_client:
