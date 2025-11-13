@@ -4,5 +4,4 @@ requests
 fpdf
 groq
 replicate
-gradio_client
 gunicorn
