@@ -17,8 +17,13 @@ from gradio_client import Client # Переконайся, що 'gradio_client' 
 # ======== КОНФІГ ========
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN") # Залишаємо, але він буде ламатись (0 кредитів)
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN") 
 WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL")
+# -------------------------------------------------------------------
+# ✅ ДОДАНО: Новий ключ для Gradio
+# -------------------------------------------------------------------
+HF_TOKEN = os.getenv("HF_TOKEN") # Ключ з Hugging Face
+
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
@@ -94,9 +99,6 @@ def translate_to_english(text_to_translate):
 
     try:
         completion = groq_client.chat.completions.create(
-            # -------------------------------------------------------------------
-            # ✅ ВИПРАВЛЕНО: Замінено модель на актуальну
-            # -------------------------------------------------------------------
             model="llama3-8b-8192",
             messages=[
                 {
@@ -193,15 +195,11 @@ def media_menu(m):
     k.row("Назад")
     bot.send_message(m.chat.id, "<b>ОБЕРИ ЗБРОЮ, КАПІТАНЕ!</b>", reply_markup=k)
 
-# -------------------------------------------------------------------
-# ✅ ОНОВЛЕНО: Тепер "Відео" - це заглушка
-# -------------------------------------------------------------------
 @bot.message_handler(func=lambda m: m.text in ["Фото", "Відео"])
 def ask_prompt(m):
     cid = m.chat.id
     
     if m.text == "Фото":
-        # --- Стандартна поведінка для ФОТО ---
         media_type = "фото"
         example = "Кіт на даху, захід сонця, фотореализм"
         bot.send_message(cid,
@@ -211,7 +209,6 @@ def ask_prompt(m):
         bot.register_next_step_handler(m, generate_photo)
     
     elif m.text == "Відео":
-        # --- "ЗАГЛУШКА" для ВІДЕО ---
         placeholder_text = (
             "🎬 <b>Генерація Відео (в Розробці)</b>\n\n"
             "Капітане, ця функція ще будується на верфі! ⚓️\n\n"
@@ -221,7 +218,7 @@ def ask_prompt(m):
         bot.send_message(cid, placeholder_text, reply_markup=main_menu())
 
 # -------------------------------------------------------------------
-# ✅ ФОТО (ПЕРЕВЕДЕНО НА STABLE DIFFUSION 3 - ЯКІСТЬ, БЕЗ 18+)
+# ✅ ФОТО (ПЕРЕВЕДЕНО НА STABLE DIFFUSION 3 + HF_TOKEN)
 # -------------------------------------------------------------------
 def generate_photo(m):
     cid = m.chat.id
@@ -235,19 +232,19 @@ def generate_photo(m):
     try:
         translated_prompt = translate_to_english(prompt)
         
-        # Використовуємо офіційний, стабільний, ЯКІСНИЙ Gradio Space
-        client = Client("stabilityai/stable-diffusion-3-medium-diffusers-api") 
+        # Використовуємо офіційний, стабільний, ЯКІСНИЙ Gradio Space + наш токен
+        client = Client("stabilityai/stable-diffusion-3-medium-diffusers-api", hf_token=HF_TOKEN) 
         
         result = client.predict(
             prompt=translated_prompt,
-            negative_prompt="blurry, worst quality, low quality, nsfw, nude, 18+", # Базовий негатив
+            negative_prompt="blurry, worst quality, low quality, nsfw, nude, 18+",
             seed=0,
             randomize_seed=True,
             width=1024,
             height=1024,
             guidance_scale=7,
             num_inference_steps=28,
-            api_name="/infer" # API name для цього спейсу
+            api_name="/infer" 
         )
         
         img_filepath = result
@@ -266,7 +263,6 @@ def generate_photo(m):
 
 # -------------------------------------------------------------------
 # ⚠️ ВІДЕО (ЗЛАМАНО - ПОТРЕБУЄ КРЕДИТІВ REPLICATE)
-# (Ця функція більше не викликається, але ми її залишаємо)
 # -------------------------------------------------------------------
 def generate_video(m):
     cid = m.chat.id
@@ -277,7 +273,6 @@ def generate_video(m):
     
     bot.send_message(cid, "ПОМИЛКА: Кредити Replicate скінчилися. Функція відео зламана.", reply_markup=main_menu())
     stop_progress(cid)
-    # Код нижче не буде виконано
     return 
 
 # ======== НАЗАД ========
@@ -313,7 +308,7 @@ def news(m):
         bot.send_message(cid, f"[Error] GROQ тимчасово недоступний: {str(e)[:100]}", reply_markup=main_menu())
 
 # -------------------------------------------------------------------
-# ✅ ПРЕЗЕНТАЦІЇ: ДОПОМІЖНА ФУНКЦІЯ (ПЕРЕВЕДЕНО НА SD3)
+# ✅ ПРЕЗЕНТАЦІЇ: ДОПОМІЖНА ФУНКЦІЯ (ПЕРЕВЕДЕНО НА SD3 + HF_TOKEN)
 # -------------------------------------------------------------------
 def generate_image_for_slide(prompt):
     """Допоміжна функція для генерації 1 зображення через Gradio (SD3)."""
@@ -321,8 +316,8 @@ def generate_image_for_slide(prompt):
         translated_prompt = translate_to_english(prompt)
         full_prompt = translated_prompt + ", professional, journal style, high resolution, minimalist"
         
-        # Використовуємо той самий новий Gradio Space
-        client = Client("stabilityai/stable-diffusion-3-medium-diffusers-api")
+        # Використовуємо той самий новий Gradio Space + наш токен
+        client = Client("stabilityai/stable-diffusion-3-medium-diffusers-api", hf_token=HF_TOKEN)
         result = client.predict(
             prompt=full_prompt,
             negative_prompt="blurry, worst quality, low quality, nsfw, nude, 18+",
