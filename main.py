@@ -19,10 +19,8 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN") 
 WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL")
-# -------------------------------------------------------------------
-# ✅ ДОДАНО: Новий ключ для Gradio
-# -------------------------------------------------------------------
-HF_TOKEN = os.getenv("HF_TOKEN") # Ключ з Hugging Face
+# (HF_TOKEN більше не потрібен для цього публічного API, але хай залишається, не заважає)
+HF_TOKEN = os.getenv("HF_TOKEN") 
 
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
@@ -218,7 +216,7 @@ def ask_prompt(m):
         bot.send_message(cid, placeholder_text, reply_markup=main_menu())
 
 # -------------------------------------------------------------------
-# ✅ ФОТО (ПЕРЕВЕДЕНО НА STABLE DIFFUSION 3 + HF_TOKEN)
+# ✅ ФОТО (ПЕРЕВЕДЕНО НА НОВИЙ GRADIO - SDXL-Turbo)
 # -------------------------------------------------------------------
 def generate_photo(m):
     cid = m.chat.id
@@ -227,42 +225,38 @@ def generate_photo(m):
     ensure_user_data(cid) 
     user_data[cid]["media"].append(prompt)
     
-    start_progress(cid, "ПЕРЕКЛАДАЮ ТА ГЕНЕРУЮ ФОТО (SD3)") 
+    start_progress(cid, "ПЕРЕКЛАДАЮ ТА ГЕНЕРУЮ ФОТО (SDXL-Turbo)") 
 
     try:
         translated_prompt = translate_to_english(prompt)
         
-        # Використовуємо офіційний, стабільний, ЯКІСНИЙ Gradio Space + наш токен
-        client = Client("stabilityai/stable-diffusion-3-medium-diffusers-api", hf_token=HF_TOKEN) 
+        # Використовуємо новий, стабільний, ЯКІСНИЙ Gradio Space
+        # HF_TOKEN не потрібен, бо він публічний
+        client = Client("radames/Real-Time-SDXL-Turbo-Gradio") 
         
         result = client.predict(
             prompt=translated_prompt,
-            negative_prompt="blurry, worst quality, low quality, nsfw, nude, 18+",
-            seed=0,
-            randomize_seed=True,
-            width=1024,
-            height=1024,
-            guidance_scale=7,
-            num_inference_steps=28,
-            api_name="/infer" 
+            api_name="/predict" # API name для цього спейсу
         )
         
-        img_filepath = result
+        # Цей спейс повертає [filepath, seed]
+        img_filepath = result[0] 
         stop_progress(cid)
         
         with open(img_filepath, "rb") as photo:
-            bot.send_photo(cid, photo, caption=f"<b>ФОТО (SD3):</b> {prompt}", reply_markup=main_menu())
+            bot.send_photo(cid, photo, caption=f"<b>ФОТО (SDXL-Turbo):</b> {prompt}", reply_markup=main_menu())
         
         if os.path.exists(img_filepath):
             os.remove(img_filepath)
 
     except Exception as e:
         stop_progress(cid)
-        bot.send_message(cid, f"[Error] Помилка Gradio (SD3): {str(e)[:100]}", reply_markup=main_menu())
+        bot.send_message(cid, f"[Error] Помилка Gradio (SDXL-Turbo): {str(e)[:100]}", reply_markup=main_menu())
 
 
 # -------------------------------------------------------------------
 # ⚠️ ВІДЕО (ЗЛАМАНО - ПОТРЕБУЄ КРЕДИТІВ REPLICATE)
+# (Ця функція більше не викликається, але ми її залишаємо)
 # -------------------------------------------------------------------
 def generate_video(m):
     cid = m.chat.id
@@ -308,34 +302,26 @@ def news(m):
         bot.send_message(cid, f"[Error] GROQ тимчасово недоступний: {str(e)[:100]}", reply_markup=main_menu())
 
 # -------------------------------------------------------------------
-# ✅ ПРЕЗЕНТАЦІЇ: ДОПОМІЖНА ФУНКЦІЯ (ПЕРЕВЕДЕНО НА SD3 + HF_TOKEN)
+# ✅ ПРЕЗЕНТАЦІЇ: ДОПОМІЖНА ФУНКЦІЯ (ПЕРЕВЕДЕНО НА SDXL-Turbo)
 # -------------------------------------------------------------------
 def generate_image_for_slide(prompt):
-    """Допоміжна функція для генерації 1 зображення через Gradio (SD3)."""
+    """Допоміжна функція для генерації 1 зображення через Gradio (SDXL-Turbo)."""
     try:
         translated_prompt = translate_to_english(prompt)
         full_prompt = translated_prompt + ", professional, journal style, high resolution, minimalist"
         
-        # Використовуємо той самий новий Gradio Space + наш токен
-        client = Client("stabilityai/stable-diffusion-3-medium-diffusers-api", hf_token=HF_TOKEN)
+        client = Client("radames/Real-Time-SDXL-Turbo-Gradio")
         result = client.predict(
             prompt=full_prompt,
-            negative_prompt="blurry, worst quality, low quality, nsfw, nude, 18+",
-            seed=0,
-            randomize_seed=True,
-            width=1024, # 16:9
-            height=576, # 16:9
-            guidance_scale=7,
-            num_inference_steps=28,
-            api_name="/infer"
+            api_name="/predict"
         )
-        img_filepath = result
+        img_filepath = result[0] 
         return img_filepath
     except Exception as e:
-        print(f"Помилка генерації фото для слайду (Gradio SD3): {e}")
+        print(f"Помилка генерації фото для слайду (SDXL-Turbo): {e}")
         return None
 
-# ======== ПРЕЗЕНТАЦІЯ (ПЕРЕВЕДЕНО НА SD3) ========
+# ======== ПРЕЗЕНТАЦІЯ (ПЕРЕВЕДЕНО НА SDXL-Turbo) ========
 @bot.message_handler(func=lambda m: m.text == "🎨 Створити презентацію")
 def create_pres(m):
     bot.send_message(m.chat.id, "<b>ТЕМА ПРЕЗЕНТАЦІЇ?</b>\nПриклад: <code>Майбутнє штучного інтелекту</code>", reply_markup=types.ReplyKeyboardRemove())
@@ -434,22 +420,23 @@ def gen_pres(m):
         pdf.set_font(font, '', 14)
         pdf.multi_cell(0, 10, f"Тема: {topic}", align='C')
         
-        bot.edit_message_text(f"<b>2/3: Генерую титульне фото... (SD3)</b>\n{progress_bar(30)}", cid, loading_msg["msg_id"])
+        bot.edit_message_text(f"<b>2/3: Генерую титульне фото... (SDXL-Turbo)</b>\n{progress_bar(30)}", cid, loading_msg["msg_id"])
         
         cover_prompt = slides[0].get("image_prompt", f"cover art for {topic}")
         # -------------------------------------------------------------------
-        # ✅ ВИПРАВЛЕНО: Використовуємо Gradio (SD3)
+        # ✅ ВИПРАВЛЕНО: Використовуємо Gradio (SDXL-Turbo)
         # -------------------------------------------------------------------
         cover_path = generate_image_for_slide(cover_prompt) 
         
         if cover_path:
             try:
+                # Вставляємо зображення 16:9
                 pdf.image(cover_path, x=10, y=pdf.get_y() + 10, w=190, h=107) 
                 os.remove(cover_path) 
             except Exception as e:
-                print(f"Не вдалося вставити титульне фото (SD3): {e}")
+                print(f"Не вдалося вставити титульне фото (SDXL-Turbo): {e}")
         else:
-             print("Фото для титулки не згенеровано (SD3 error?).")
+             print("Фото для титулки не згенеровано (SDXL-Turbo error?).")
 
         # --- Крок 5: Слайди контенту ---
         progress_step = 60 // len(slides)
@@ -460,10 +447,10 @@ def gen_pres(m):
             pdf.multi_cell(0, 10, f'\n{slide.get("slide_title", "")}\n', align='C')
             
             current_progress = 30 + (i+1) * progress_step
-            bot.edit_message_text(f"<b>3/3: Генерую слайд {i+1}/{len(slides)}... (SD3)</b>\n{progress_bar(current_progress)}", cid, loading_msg["msg_id"])
+            bot.edit_message_text(f"<b>3/3: Генерую слайд {i+1}/{len(slides)}... (SDXL-Turbo)</b>\n{progress_bar(current_progress)}", cid, loading_msg["msg_id"])
 
             # -------------------------------------------------------------------
-            # ✅ ВИПРАВЛЕНО: Використовуємо Gradio (SD3)
+            # ✅ ВИПРАВЛЕНО: Використовуємо Gradio (SDXL-Turbo)
             # -------------------------------------------------------------------
             img_path = generate_image_for_slide(slide.get("image_prompt", f"abstract image for {topic}"))
             
@@ -473,9 +460,9 @@ def gen_pres(m):
                     pdf.ln(107 + 5)
                     os.remove(img_path) 
                 except Exception as e:
-                    print(f"Не вдалося завантажити/вставити фото слайду {i} (SD3): {e}")
+                    print(f"Не вдалося завантажити/вставити фото слайду {i} (SDXL-Turbo): {e}")
             else:
-                 print(f"Фото для слайду {i} не згенеровано (SD3 error?).")
+                 print(f"Фото для слайду {i} не згенеровано (SDXL-Turbo error?).")
             
             pdf.ln(5)
             pdf.set_font(font, '', 12)
