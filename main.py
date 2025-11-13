@@ -17,7 +17,7 @@ from gradio_client import Client # Переконайся, що 'gradio_client' 
 # ======== КОНФІГ ========
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN") # Залишаємо, але він буде ламатись (0 кредитів)
 WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL")
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
@@ -94,6 +94,9 @@ def translate_to_english(text_to_translate):
 
     try:
         completion = groq_client.chat.completions.create(
+            # -------------------------------------------------------------------
+            # ✅ ВИПРАВЛЕНО: Замінено модель на актуальну
+            # -------------------------------------------------------------------
             model="llama3-8b-8192",
             messages=[
                 {
@@ -208,17 +211,18 @@ def ask_prompt(m):
         bot.register_next_step_handler(m, generate_photo)
     
     elif m.text == "Відео":
-        # --- НОВА "ЗАГЛУШКА" для ВІДЕО ---
+        # --- "ЗАГЛУШКА" для ВІДЕО ---
         placeholder_text = (
             "🎬 <b>Генерація Відео (в Розробці)</b>\n\n"
             "Капітане, ця функція ще будується на верфі! ⚓️\n\n"
             "Ми працюємо над тим, щоб додати генерацію реалістичних відео, і вона стане доступна незабаром.\n\n"
             "А поки що, спробуй «Фото»!"
         )
-        # Відправляємо повідомлення-заглушку і повертаємо в головне меню
         bot.send_message(cid, placeholder_text, reply_markup=main_menu())
 
-# === ФОТО (Gradio - 18+, низька якість) ===
+# -------------------------------------------------------------------
+# ✅ ФОТО (ПЕРЕВЕДЕНО НА STABLE DIFFUSION 3 - ЯКІСТЬ, БЕЗ 18+)
+# -------------------------------------------------------------------
 def generate_photo(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
@@ -226,85 +230,55 @@ def generate_photo(m):
     ensure_user_data(cid) 
     user_data[cid]["media"].append(prompt)
     
-    start_progress(cid, "ПЕРЕКЛАДАЮ ТА ГЕНЕРУЮ ФОТО (DreamShaper)") 
+    start_progress(cid, "ПЕРЕКЛАДАЮ ТА ГЕНЕРУЮ ФОТО (SD3)") 
 
     try:
         translated_prompt = translate_to_english(prompt)
         
-        client = Client("Lykon/dreamshaper-xl") 
+        # Використовуємо офіційний, стабільний, ЯКІСНИЙ Gradio Space
+        client = Client("stabilityai/stable-diffusion-3-medium-diffusers-api") 
         
         result = client.predict(
             prompt=translated_prompt,
-            negative_prompt="worst quality, low quality, nsfw",
+            negative_prompt="blurry, worst quality, low quality, nsfw, nude, 18+", # Базовий негатив
+            seed=0,
+            randomize_seed=True,
             width=1024,
             height=1024,
-            guidance_scale=7.5,
+            guidance_scale=7,
             num_inference_steps=28,
-            api_name="/predict"
+            api_name="/infer" # API name для цього спейсу
         )
         
-        img_filepath = result[0]
+        img_filepath = result
         stop_progress(cid)
         
         with open(img_filepath, "rb") as photo:
-            bot.send_photo(cid, photo, caption=f"<b>ФОТО:</b> {prompt}", reply_markup=main_menu())
+            bot.send_photo(cid, photo, caption=f"<b>ФОТО (SD3):</b> {prompt}", reply_markup=main_menu())
         
         if os.path.exists(img_filepath):
             os.remove(img_filepath)
 
     except Exception as e:
         stop_progress(cid)
-        bot.send_message(cid, f"[Error] Помилка Gradio (DreamShaper): {str(e)[:100]}", reply_markup=main_menu())
+        bot.send_message(cid, f"[Error] Помилка Gradio (SD3): {str(e)[:100]}", reply_markup=main_menu())
 
 
 # -------------------------------------------------------------------
-# ⚠️ ВІДЕО (ЦЯ ФУНКЦІЯ БІЛЬШЕ НЕ ВИКЛИКАЄТЬСЯ, АЛЕ ЗАЛИШАЄТЬСЯ В КОДІ)
+# ⚠️ ВІДЕО (ЗЛАМАНО - ПОТРЕБУЄ КРЕДИТІВ REPLICATE)
+# (Ця функція більше не викликається, але ми її залишаємо)
 # -------------------------------------------------------------------
 def generate_video(m):
     cid = m.chat.id
     prompt = m.text.strip().strip('«»"')
-
     ensure_user_data(cid) 
     user_data[cid]["video"].append(prompt) 
+    start_progress(cid, "ПЕРЕКЛАДАЮ (Replicate)")
     
-    start_progress(cid, "ПЕРЕКЛАДАЮ ТА СТВОРЮЮ ВІДЕО (Replicate)")
-
-    if not REPLICATE_API_TOKEN:
-        stop_progress(cid)
-        bot.send_message(cid, "[Warning] Replicate API не налаштований.", reply_markup=main_menu())
-        return
-
-    try:
-        translated_prompt = translate_to_english(prompt)
-
-        image_output = replicate.run(
-            "black-forest-labs/flux-schnell",
-            input={
-                "prompt": translated_prompt + ", cinematic keyframe, 4K, ultra realistic, sharp, masterpiece",
-                "num_outputs": 1,
-                "width": 1024,
-                "height": 576,
-                "num_inference_steps": 4
-            }
-        )
-        image_url = image_output[0]
-
-        video_output = replicate.run(
-            "stability-ai/stable-video-diffusion-img2vid-xt",
-            input={
-                "image": image_url,
-                "motion_bucket_id": 127,
-                "fps": 7,
-                "noise_aug_strength": 0.02
-            }
-        )
-        video_url = video_output[0]
-
-        stop_progress(cid)
-        bot.send_video(cid, video_url, caption=f"<b>ВІДЕО:</b> {prompt}", reply_markup=main_menu())
-    except Exception as e:
-        stop_progress(cid)
-        bot.send_message(cid, f"[Error] Помилка відео: {str(e)[:100]}", reply_markup=main_menu())
+    bot.send_message(cid, "ПОМИЛКА: Кредити Replicate скінчилися. Функція відео зламана.", reply_markup=main_menu())
+    stop_progress(cid)
+    # Код нижче не буде виконано
+    return 
 
 # ======== НАЗАД ========
 @bot.message_handler(func=lambda m: m.text == "Назад")
@@ -323,6 +297,9 @@ def news(m):
         return
     try:
         completion = groq_client.chat.completions.create(
+            # -------------------------------------------------------------------
+            # ✅ ВИПРАВЛЕНО: Замінено модель на актуальну
+            # -------------------------------------------------------------------
             model="llama3-70b-8192",
             messages=[{"role": "user", "content": "3 найцікавіші новини про океан за 24 год: заголовок, 2 речення, фото, відео YouTube, джерело. Markdown."}],
             max_tokens=1000
@@ -333,32 +310,37 @@ def news(m):
 
     except Exception as e:
         stop_progress(cid)
-        bot.send_message(cid, "[Error] GROQ тимчасово недоступний.", reply_markup=main_menu())
+        bot.send_message(cid, f"[Error] GROQ тимчасово недоступний: {str(e)[:100]}", reply_markup=main_menu())
 
-# ======== ДОПОМІЖНА ФУНКЦІЯ ГЕНЕРАЦІЇ ФОТО ДЛЯ СЛАЙДІВ (Gradio) ========
+# -------------------------------------------------------------------
+# ✅ ПРЕЗЕНТАЦІЇ: ДОПОМІЖНА ФУНКЦІЯ (ПЕРЕВЕДЕНО НА SD3)
+# -------------------------------------------------------------------
 def generate_image_for_slide(prompt):
-    """Допоміжна функція для генерації 1 зображення через Gradio (повертає локальний шлях)."""
+    """Допоміжна функція для генерації 1 зображення через Gradio (SD3)."""
     try:
         translated_prompt = translate_to_english(prompt)
         full_prompt = translated_prompt + ", professional, journal style, high resolution, minimalist"
         
-        client = Client("Lykon/dreamshaper-xl")
+        # Використовуємо той самий новий Gradio Space
+        client = Client("stabilityai/stable-diffusion-3-medium-diffusers-api")
         result = client.predict(
             prompt=full_prompt,
-            negative_prompt="worst quality, low quality, nsfw",
+            negative_prompt="blurry, worst quality, low quality, nsfw, nude, 18+",
+            seed=0,
+            randomize_seed=True,
             width=1024, # 16:9
             height=576, # 16:9
-            guidance_scale=7.5,
+            guidance_scale=7,
             num_inference_steps=28,
-            api_name="/predict"
+            api_name="/infer"
         )
-        img_filepath = result[0] 
+        img_filepath = result
         return img_filepath
     except Exception as e:
-        print(f"Помилка генерації фото для слайду (Gradio): {e}")
+        print(f"Помилка генерації фото для слайду (Gradio SD3): {e}")
         return None
 
-# ======== ПРЕЗЕНТАЦІЯ (Gradio) ========
+# ======== ПРЕЗЕНТАЦІЯ (ПЕРЕВЕДЕНО НА SD3) ========
 @bot.message_handler(func=lambda m: m.text == "🎨 Створити презентацію")
 def create_pres(m):
     bot.send_message(m.chat.id, "<b>ТЕМА ПРЕЗЕНТАЦІЇ?</b>\nПриклад: <code>Майбутнє штучного інтелекту</code>", reply_markup=types.ReplyKeyboardRemove())
@@ -419,6 +401,9 @@ def gen_pres(m):
         """
         
         completion = groq_client.chat.completions.create(
+            # -------------------------------------------------------------------
+            # ✅ ВИПРАВЛЕНО: Замінено модель на актуальну
+            # -------------------------------------------------------------------
             model="llama3-70b-8192",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=4096,
@@ -454,9 +439,12 @@ def gen_pres(m):
         pdf.set_font(font, '', 14)
         pdf.multi_cell(0, 10, f"Тема: {topic}", align='C')
         
-        bot.edit_message_text(f"<b>2/3: Генерую титульне фото... (Gradio)</b>\n{progress_bar(30)}", cid, loading_msg["msg_id"])
+        bot.edit_message_text(f"<b>2/3: Генерую титульне фото... (SD3)</b>\n{progress_bar(30)}", cid, loading_msg["msg_id"])
         
         cover_prompt = slides[0].get("image_prompt", f"cover art for {topic}")
+        # -------------------------------------------------------------------
+        # ✅ ВИПРАВЛЕНО: Використовуємо Gradio (SD3)
+        # -------------------------------------------------------------------
         cover_path = generate_image_for_slide(cover_prompt) 
         
         if cover_path:
@@ -464,9 +452,9 @@ def gen_pres(m):
                 pdf.image(cover_path, x=10, y=pdf.get_y() + 10, w=190, h=107) 
                 os.remove(cover_path) 
             except Exception as e:
-                print(f"Не вдалося вставити титульне фото (Gradio): {e}")
+                print(f"Не вдалося вставити титульне фото (SD3): {e}")
         else:
-             print("Фото для титулки не згенеровано (Gradio error?).")
+             print("Фото для титулки не згенеровано (SD3 error?).")
 
         # --- Крок 5: Слайди контенту ---
         progress_step = 60 // len(slides)
@@ -477,8 +465,11 @@ def gen_pres(m):
             pdf.multi_cell(0, 10, f'\n{slide.get("slide_title", "")}\n', align='C')
             
             current_progress = 30 + (i+1) * progress_step
-            bot.edit_message_text(f"<b>3/3: Генерую слайд {i+1}/{len(slides)}... (Gradio)</b>\n{progress_bar(current_progress)}", cid, loading_msg["msg_id"])
+            bot.edit_message_text(f"<b>3/3: Генерую слайд {i+1}/{len(slides)}... (SD3)</b>\n{progress_bar(current_progress)}", cid, loading_msg["msg_id"])
 
+            # -------------------------------------------------------------------
+            # ✅ ВИПРАВЛЕНО: Використовуємо Gradio (SD3)
+            # -------------------------------------------------------------------
             img_path = generate_image_for_slide(slide.get("image_prompt", f"abstract image for {topic}"))
             
             if img_path:
@@ -487,9 +478,9 @@ def gen_pres(m):
                     pdf.ln(107 + 5)
                     os.remove(img_path) 
                 except Exception as e:
-                    print(f"Не вдалося завантажити/вставити фото слайду {i} (Gradio): {e}")
+                    print(f"Не вдалося завантажити/вставити фото слайду {i} (SD3): {e}")
             else:
-                 print(f"Фото для слайду {i} не згенеровано (Gradio error?).")
+                 print(f"Фото для слайду {i} не згенеровано (SD3 error?).")
             
             pdf.ln(5)
             pdf.set_font(font, '', 12)
@@ -538,7 +529,7 @@ def answer_q(m):
         bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
     except Exception as e:
         stop_progress(cid)
-        bot.send_message(cid, "[Error] GROQ перевантажено.", reply_markup=main_menu())
+        bot.send_message(cid, f"[Error] GROQ перевантажено: {str(e)[:100]}", reply_markup=main_menu())
 
 # ======== FLASK WEBHOOK ========
 @app.route('/', methods=['GET', 'HEAD'])
