@@ -2,5 +2,7 @@ flask
 pyTelegramBotAPI
 requests
 fpdf
+groq
+replicate
 gunicorn
-google-generativeai
+gradio_client
