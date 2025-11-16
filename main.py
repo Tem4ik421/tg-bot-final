@@ -11,29 +11,25 @@ import telebot
 from telebot import types
 from fpdf import FPDF
 from io import BytesIO
-# -------------------------------------------------------------------
-# ✅ ВИДАЛЕНО: Groq, Replicate
-# ✅ ДОДАНО: google.generativeai
-# -------------------------------------------------------------------
-import google.generativeai as genai
+from groq import Groq
+import replicate
+from gradio_client import Client # <-- Ця бібліотека нам потрібна
 
 # ======== КОНФІГ ========
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN") 
 GETIMG_API_KEY = os.getenv("GETIMG_API_KEY") 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") # <-- Використовуємо ключ Google
+HF_TOKEN = os.getenv("HF_TOKEN") # (Цей ключ більше не потрібен, але нехай буде)
 
 WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL")
 WEBHOOK_PATH = f"/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 # Ініціалізація
-try:
-    if GEMINI_API_KEY:
-        genai.configure(api_key=GEMINI_API_KEY)
-    else:
-        print("ПОПЕРЕДЖЕННЯ: GEMINI_API_KEY не знайдено.")
-except Exception as e:
-    print(f"Помилка конфігурації Gemini: {e}")
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+if REPLICATE_API_TOKEN:
+    replicate.Client(api_token=REPLICATE_API_TOKEN)
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
 app = Flask(__name__)
@@ -93,28 +89,41 @@ def main_menu():
     k.row("🎨 Створити презентацію", "❓ Відповіді на питання")
     return k
 
-# -------------------------------------------------------------------
-# ✅ ФУНКЦІЯ АВТО-ПЕРЕКЛАДУ (ПЕРЕВЕДЕНО НА GEMINI)
-# -------------------------------------------------------------------
+# ======== ФУНКЦІЯ АВТО-ПЕРЕКЛАДУ ========
 def translate_to_english(text_to_translate):
-    """Перекладає текст на англійську, використовуючи Gemini."""
-    if not GEMINI_API_KEY:
-        print("Попередження: Gemini API не налаштований, переклад неможливий.")
+    """Перекладає текст на англійську, використовуючи Groq."""
+    if not groq_client:
+        print("Попередження: Groq API не налаштований, переклад неможливий.")
         return text_to_translate 
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        prompt = f"Translate the following text to English. Return ONLY the translated text, nothing else, no quotation marks: '{text_to_translate}'"
-        response = model.generate_content(prompt)
-        translated_text = response.text.strip().strip('"')
+        completion = groq_client.chat.completions.create(
+            # -------------------------------------------------------------------
+            # ✅ ВИПРАВЛЕНО: Використовуємо робочу модель
+            # -------------------------------------------------------------------
+            model="gemma-7b-it", # (Якщо ця "помре", замінимо на llama3-8b-8192)
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a translation assistant. Translate the user's text to English. Return ONLY the translated text, nothing else. Do not add quotation marks."
+                },
+                {
+                    "role": "user",
+                    "content": text_to_translate
+                }
+            ],
+            max_tokens=300,
+            temperature=0.0
+        )
+        translated_text = completion.choices[0].message.content.strip().strip('"')
         
         if translated_text:
-            print(f"Переклад (Gemini): '{text_to_translate}' -> '{translated_text}'")
+            print(f"Переклад: '{text_to_translate}' -> '{translated_text}'")
             return translated_text
         else:
             return text_to_translate
     except Exception as e:
-        print(f"Помилка перекладу (Gemini): {e}")
+        print(f"Помилка перекладу: {e}")
         return text_to_translate
 
 # ======== ЗАХИСНА ФУНКЦІЯ ========
@@ -212,7 +221,7 @@ def ask_prompt(m):
         bot.send_message(cid, placeholder_text, reply_markup=main_menu())
 
 # -------------------------------------------------------------------
-# ✅ ФОТО (ПЕРЕВЕДЕНО НА GETIMG.AI - ЯКІСТЬ, АЛЕ З ФІЛЬТРОМ 18+)
+# ✅ ФОТО (ПОВЕРНУЛИСЯ ДО FLUX-UNLIMITED 18+)
 # -------------------------------------------------------------------
 def generate_photo(m):
     cid = m.chat.id
@@ -221,59 +230,51 @@ def generate_photo(m):
     ensure_user_data(cid) 
     user_data[cid]["media"].append(prompt)
     
-    start_progress(cid, "ПЕРЕКЛАДАЮ (Gemini) ТА ГЕНЕРУЮ (Getimg.ai)") 
-
-    if not GETIMG_API_KEY:
-        stop_progress(cid)
-        bot.send_message(cid, "[Warning] Getimg.ai API не налаштований.", reply_markup=main_menu())
-        return
+    start_progress(cid, "ПЕРЕКЛАДАЮ ТА ГЕНЕРУЮ ФОТО (FLUX-Unlimited)") 
 
     try:
         translated_prompt = translate_to_english(prompt)
         
-        url = "https://api.getimg.ai/v1/stable-diffusion/text-to-image"
-        headers = {
-            "Authorization": f"Bearer {GETIMG_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": "stable-diffusion-xl-v1-0", # Якісна модель
-            "prompt": translated_prompt,
-            "negative_prompt": "Disfigured, cartoon, blurry, nude, nsfw, 18+", # Фільтр
-            "width": 1024,
-            "height": 1024,
-            "steps": 30,
-            "output_format": "jpeg"
-        }
-
-        response = requests.post(url, headers=headers, json=payload)
+        # Використовуємо Gradio, як в документації
+        client = Client("NihalGazi/FLUX-Unlimited") 
         
-        if response.status_code != 200:
-            raise Exception(f"Помилка Getimg.ai: {response.status_code} - {response.text}")
-
-        data = response.json()
-        img_base64 = data.get("image")
+        result = client.predict(
+            prompt=translated_prompt,
+            width=1024, # (У доках 512, але default 1280. 1024 - це компроміс)
+            height=1024,
+            seed=0,
+            randomize=True,
+            server_choice="Google US Server",
+            api_name="/generate_image" # Згідно з твоєю документацією
+        )
         
-        if not img_base64:
-             raise Exception("Getimg.ai повернув порожню відповідь.")
-
-        img_bytes = base64.b64decode(img_base64)
-        
+        img_filepath = result[0] # [0] - це string (шлях до фото)
         stop_progress(cid)
         
-        bot.send_photo(cid, img_bytes, caption=f"<b>ФОТО (Getimg.ai):</b> {prompt}", reply_markup=main_menu())
+        with open(img_filepath, "rb") as photo:
+            bot.send_photo(cid, photo, caption=f"<b>ФОТО (FLUX):</b> {prompt}", reply_markup=main_menu())
+        
+        if os.path.exists(img_filepath):
+            os.remove(img_filepath)
 
     except Exception as e:
         stop_progress(cid)
-        bot.send_message(cid, f"[Error] Помилка Getimg.ai: {str(e)[:100]}", reply_markup=main_menu())
+        bot.send_message(cid, f"[Error] Помилка Gradio (FLUX): {str(e)[:100]}", reply_markup=main_menu())
 
 
 # -------------------------------------------------------------------
-# ⚠️ ВІДЕО (ЗЛАМАНО)
+# ⚠️ ВІДЕО (ЗЛАМАНО - ПОТРЕБУЄ КРЕДИТІВ REPLICATE)
+# (Ця функція більше не викликається, але ми її залишаємо)
 # -------------------------------------------------------------------
 def generate_video(m):
     cid = m.chat.id
-    bot.send_message(cid, "Функція відео тимчасово недоступна.", reply_markup=main_menu())
+    prompt = m.text.strip().strip('«»"')
+    ensure_user_data(cid) 
+    user_data[cid]["video"].append(prompt) 
+    start_progress(cid, "ПЕРЕКЛАДАЮ (Replicate)")
+    
+    bot.send_message(cid, "ПОМИЛКА: Кредити Replicate скінчилися. Функція відео зламана.", reply_markup=main_menu())
+    stop_progress(cid)
     return 
 
 # ======== НАЗАД ========
@@ -281,77 +282,59 @@ def generate_video(m):
 def back(m):
     bot.send_message(m.chat.id, "<b>ГОЛОВНЕ МЕНЮ</b>", reply_markup=main_menu())
 
-# -------------------------------------------------------------------
-# ✅ МОРСЬКІ НОВИНИ (ПЕРЕВЕДЕНО НА GEMINI)
-# -------------------------------------------------------------------
+# ======== МОРСЬКІ НОВИНИ ========
 @bot.message_handler(func=lambda m: m.text == "⚓️ Морські новини")
 def news(m):
     cid = m.chat.id
     ensure_user_data(cid)
-    start_progress(cid, "ШУКАЮ НОВИНИ (Gemini)")
-    if not GEMINI_API_KEY:
+    start_progress(cid, "ШУКАЮ НОВИНИ")
+    if not groq_client:
         stop_progress(cid)
-        bot.send_message(cid, "[Warning] Gemini API ключ не налаштований.", reply_markup=main_menu())
+        bot.send_message(cid, "[Warning] GROQ API ключ не налаштований.", reply_markup=main_menu())
         return
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        prompt = "3 найцікавіші новини про океан за 24 год: заголовок, 2 речення, фото, відео YouTube, джерело. Markdown."
-        
-        response = model.generate_content(prompt)
+        completion = groq_client.chat.completions.create(
+            # -------------------------------------------------------------------
+            # ✅ ВИПРАВЛЕНО: Замінено модель на актуальну
+            # -------------------------------------------------------------------
+            model="gemma-7b-it",
+            messages=[{"role": "user", "content": "3 найцікавіші новини про океан за 24 год: заголовок, 2 речення, фото, відео YouTube, джерело. Markdown."}],
+            max_tokens=1000
+        )
         stop_progress(cid)
-        bot.send_message(cid, response.text, disable_web_page_preview=False, reply_markup=main_menu())
+        bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
         user_data[cid]["news"].append(time.strftime("%H:%M"))
 
     except Exception as e:
         stop_progress(cid)
-        bot.send_message(cid, f"[Error] Помилка Gemini: {str(e)[:100]}", reply_markup=main_menu())
+        bot.send_message(cid, f"[Error] GROQ тимчасово недоступний: {str(e)[:100]}", reply_markup=main_menu())
 
 # -------------------------------------------------------------------
-# ✅ ПРЕЗЕНТАЦІЇ: ДОПОМІЖНА ФУНКЦІЯ (Getimg.ai)
+# ✅ ПРЕЗЕНТАЦІЇ: ДОПОМІЖНА ФУНКЦІЯ (ПОВЕРНУЛИСЯ ДО FLUX-Unlimited 18+)
 # -------------------------------------------------------------------
 def generate_image_for_slide(prompt):
-    """Допоміжна функція для генерації 1 зображення через Getimg.ai (повертає Bytes)."""
-    if not GETIMG_API_KEY:
-        print("Getimg.ai API не налаштований, зображення для слайду пропущено.")
-        return None
-        
+    """Допоміжна функція для генерації 1 зображення через Gradio (FLUX-Unlimited)."""
     try:
         translated_prompt = translate_to_english(prompt)
         full_prompt = translated_prompt + ", professional, journal style, high resolution, minimalist"
         
-        url = "https://api.getimg.ai/v1/stable-diffusion/text-to-image"
-        headers = {
-            "Authorization": f"Bearer {GETIMG_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": "stable-diffusion-xl-v1-0",
-            "prompt": full_prompt,
-            "negative_prompt": "Disfigured, cartoon, blurry, nude, nsfw, 18+",
-            "width": 1024, # 16:9
-            "height": 576, # 16:9
-            "steps": 25,
-            "output_format": "jpeg"
-        }
-
-        response = requests.post(url, headers=headers, json=payload)
-        if response.status_code != 200:
-            raise Exception(f"Помилка Getimg.ai (слайд): {response.status_code} - {response.text}")
-        
-        data = response.json()
-        img_base64 = data.get("image")
-        
-        if img_base64:
-            return base64.b64decode(img_base64)
-        return None
-        
+        client = Client("NihalGazi/FLUX-Unlimited")
+        result = client.predict(
+            prompt=full_prompt,
+            width=1024, # 16:9
+            height=576, # 16:9
+            seed=0,
+            randomize=True,
+            server_choice="Google US Server",
+            api_name="/generate_image"
+        )
+        img_filepath = result[0] 
+        return img_filepath
     except Exception as e:
-        print(f"Помилка генерації фото для слайду (Getimg.ai): {e}")
+        print(f"Помилка генерації фото для слайду (FLUX): {e}")
         return None
 
-# -------------------------------------------------------------------
-# ✅ ПРЕЗЕНТАЦІЯ (ПЕРЕВЕДЕНО НА GEMINI + GETIMG.AI)
-# -------------------------------------------------------------------
+# ======== ПРЕЗЕНТАЦІЯ (ПОВЕРНУЛИСЯ ДО FLUX-Unlimited 18+) ========
 @bot.message_handler(func=lambda m: m.text == "🎨 Створити презентацію")
 def create_pres(m):
     bot.send_message(m.chat.id, "<b>ТЕМА ПРЕЗЕНТАЦІЇ?</b>\nПриклад: <code>Майбутнє штучного інтелекту</code>", reply_markup=types.ReplyKeyboardRemove())
@@ -363,20 +346,15 @@ def gen_pres(m):
     ensure_user_data(cid)
     user_data[cid]["pres"].append(topic) 
     
-    loading_msg = start_progress(cid, f"1/3: Створюю план '{topic}' (Gemini)")
+    loading_msg = start_progress(cid, f"1/3: Створюю план '{topic}'")
     
-    if not GEMINI_API_KEY:
+    if not groq_client:
         stop_progress(cid)
-        bot.send_message(cid, "[Warning] Gemini API ключ не налаштований.", reply_markup=main_menu())
-        return
-    if not GETIMG_API_KEY:
-        stop_progress(cid)
-        bot.send_message(cid, "[Warning] Getimg.ai API ключ не налаштований.", reply_markup=main_menu())
+        bot.send_message(cid, "[Warning] GROQ API ключ не налаштований.", reply_markup=main_menu())
         return
 
     try:
-        # --- Крок 1: Отримуємо структуру від Gemini ---
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        # --- Крок 1: Отримуємо структуру від Groq ---
         prompt = f"""
         Створи структуру для 5-слайдової презентації в журнальному стилі на тему '{topic}'.
         Дотримуйся чіткого JSON формату. Жодного тексту поза JSON.
@@ -416,18 +394,26 @@ def gen_pres(m):
         }}
         """
         
-        response = model.generate_content(prompt)
+        completion = groq_client.chat.completions.create(
+            # -------------------------------------------------------------------
+            # ✅ ВИПРАВЛЕНО: Замінено модель на актуальну
+            # -------------------------------------------------------------------
+            model="gemma-7b-it",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=4096,
+            temperature=0.2,
+            response_format={"type": "json_object"}
+        )
         
         # --- Крок 2: Парсимо JSON ---
         try:
-            # Gemini може повернути JSON у ` ```json ... ``` `
-            raw_json = re.search(r"\{.*\}", response.text, re.DOTALL).group(0)
+            raw_json = re.search(r"\{.*\}", completion.choices[0].message.content, re.DOTALL).group(0)
             data = json.loads(raw_json)
             main_title = data.get("main_title", topic)
             slides = data.get("slides", [])
-            if not slides: raise ValueError("Gemini повернув порожні слайди")
+            if not slides: raise ValueError("Groq повернув порожні слайди")
         except Exception as e:
-            raise ValueError(f"Не вдалося розпарсити JSON від Gemini. {e}")
+            raise ValueError(f"Не вдалося розпарсити JSON від Groq. {e}")
 
         # --- Крок 3: Створюємо PDF та додаємо шрифти ---
         pdf = FPDF()
@@ -447,23 +433,22 @@ def gen_pres(m):
         pdf.set_font(font, '', 14)
         pdf.multi_cell(0, 10, f"Тема: {topic}", align='C')
         
-        bot.edit_message_text(f"<b>2/3: Генерую титульне фото... (Getimg.ai)</b>\n{progress_bar(30)}", cid, loading_msg["msg_id"])
+        bot.edit_message_text(f"<b>2/3: Генерую титульне фото... (FLUX)</b>\n{progress_bar(30)}", cid, loading_msg["msg_id"])
         
         cover_prompt = slides[0].get("image_prompt", f"cover art for {topic}")
-        cover_bytes = generate_image_for_slide(cover_prompt) 
+        # -------------------------------------------------------------------
+        # ✅ ВИПРАВЛЕНО: Використовуємо Gradio (FLUX)
+        # -------------------------------------------------------------------
+        cover_path = generate_image_for_slide(cover_prompt) 
         
-        if cover_bytes:
+        if cover_path:
             try:
-                temp_img_path = f"temp_cover_{cid}.jpg"
-                with open(temp_img_path, "wb") as f:
-                    f.write(cover_bytes)
-                
-                pdf.image(temp_img_path, x=10, y=pdf.get_y() + 10, w=190, h=107) 
-                os.remove(temp_img_path) 
+                pdf.image(cover_path, x=10, y=pdf.get_y() + 10, w=190, h=107) 
+                os.remove(cover_path) 
             except Exception as e:
-                print(f"Не вдалося вставити титульне фото (Getimg.ai): {e}")
+                print(f"Не вдалося вставити титульне фото (FLUX): {e}")
         else:
-             print("Фото для титулки не згенеровано (Getimg.ai error?).")
+             print("Фото для титулки не згенеровано (FLUX error?).")
 
         # --- Крок 5: Слайди контенту ---
         progress_step = 60 // len(slides)
@@ -474,23 +459,22 @@ def gen_pres(m):
             pdf.multi_cell(0, 10, f'\n{slide.get("slide_title", "")}\n', align='C')
             
             current_progress = 30 + (i+1) * progress_step
-            bot.edit_message_text(f"<b>3/3: Генерую слайд {i+1}/{len(slides)}... (Getimg.ai)</b>\n{progress_bar(current_progress)}", cid, loading_msg["msg_id"])
+            bot.edit_message_text(f"<b>3/3: Генерую слайд {i+1}/{len(slides)}... (FLUX)</b>\n{progress_bar(current_progress)}", cid, loading_msg["msg_id"])
 
-            img_bytes = generate_image_for_slide(slide.get("image_prompt", f"abstract image for {topic}"))
+            # -------------------------------------------------------------------
+            # ✅ ВИПРАВЛЕНО: Використовуємо Gradio (FLUX)
+            # -------------------------------------------------------------------
+            img_path = generate_image_for_slide(slide.get("image_prompt", f"abstract image for {topic}"))
             
-            if img_bytes:
+            if img_path:
                 try:
-                    temp_img_path = f"temp_slide_{cid}_{i}.jpg"
-                    with open(temp_img_path, "wb") as f:
-                        f.write(img_bytes)
-                    
-                    pdf.image(temp_img_path, x=10, y=pdf.get_y() + 5, w=190, h=107) 
+                    pdf.image(img_path, x=10, y=pdf.get_y() + 5, w=190, h=107) 
                     pdf.ln(107 + 5)
-                    os.remove(temp_img_path) 
+                    os.remove(img_path) 
                 except Exception as e:
-                    print(f"Не вдалося завантажити/вставити фото слайду {i} (Getimg.ai): {e}")
+                    print(f"Не вдалося завантажити/вставити фото слайду {i} (FLUX): {e}")
             else:
-                 print(f"Фото для слайду {i} не згенеровано (Getimg.ai error?).")
+                 print(f"Фото для слайду {i} не згенеровано (FLUX error?).")
             
             pdf.ln(5)
             pdf.set_font(font, '', 12)
@@ -509,9 +493,7 @@ def gen_pres(m):
         bot.send_message(cid, f"[Error] Помилка створення PDF: {str(e)[:1000]}", reply_markup=main_menu())
 
 
-# -------------------------------------------------------------------
-# ✅ ПИТАННЯ (ПЕРЕВЕДЕНО НА GEMINI)
-# -------------------------------------------------------------------
+# ======== ПИТАННЯ ========
 @bot.message_handler(func=lambda m: m.text == "❓ Відповіді на питання")
 def ask_q(m):
     bot.send_message(m.chat.id, "<b>ЗАДАЙ ПИТАННЯ:</b>\nПриклад: <code>Коли я стану мільйонером?</code>", reply_markup=types.ReplyKeyboardRemove())
@@ -523,21 +505,25 @@ def answer_q(m):
     ensure_user_data(cid)
     user_data[cid]["questions"].append(q)
     
-    start_progress(cid, "ДУМАЮ... (Gemini)")
-    if not GEMINI_API_KEY:
+    start_progress(cid, "ДУМАЮ...")
+    if not groq_client:
         stop_progress(cid)
-        bot.send_message(cid, "[Warning] Gemini API ключ не налаштований.", reply_markup=main_menu())
+        bot.send_message(cid, "[Warning] GROQ API ключ не налаштований.", reply_markup=main_menu())
         return
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        prompt = f"Відповідь: {q}. 3 абзаци, фото, відео YouTube, 2 джерела."
-        
-        response = model.generate_content(prompt)
+        completion = groq_client.chat.completions.create(
+            # -------------------------------------------------------------------
+            # ✅ ВИПРАВЛЕНО: Замінено модель на актуальну
+            # -------------------------------------------------------------------
+            model="gemma-7b-it",
+            messages=[{"role": "user", "content": f"Відповідь: {q}. 3 абзаци, фото, відео YouTube, 2 джерела."}],
+            max_tokens=1200
+        )
         stop_progress(cid)
-        bot.send_message(cid, response.text, disable_web_page_preview=False, reply_markup=main_menu())
+        bot.send_message(cid, completion.choices[0].message.content, disable_web_page_preview=False, reply_markup=main_menu())
     except Exception as e:
         stop_progress(cid)
-        bot.send_message(cid, f"[Error] Помилка Gemini: {str(e)[:100]}", reply_markup=main_menu())
+        bot.send_message(cid, f"[Error] GROQ перевантажено: {str(e)[:100]}", reply_markup=main_menu())
 
 # ======== FLASK WEBHOOK ========
 @app.route('/', methods=['GET', 'HEAD'])
